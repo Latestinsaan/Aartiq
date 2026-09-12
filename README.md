@@ -1,18 +1,18 @@
 # Aartiq™ — For The Questions That Matter
 
-> “The most important question isn't what you ask AI. It's what AI asks you before it acts.”
+> "The most important question isn't what you ask AI. It's what AI asks you before it acts."
 
 Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial actions, requests permission when required, and executes through controlled capabilities.
 
 **Plan → Explain → Ask → Execute**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-cyan.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.3.6-blue.svg)](https://github.com/Preet3627/Aartiq/releases/tag/v0.3.6)
-[![Downloads](https://img.shields.io/github/downloads/Preet3627/Aartiq/total?color=success&label=Downloads)](https://github.com/Preet3627/Aartiq/releases)
-[![Windows](https://img.shields.io/badge/Windows-Supported-blue?logo=windows)](https://github.com/Preet3627/Aartiq/releases/latest)
-[![macOS](https://img.shields.io/badge/macOS-Supported-blue?logo=apple)](https://github.com/Preet3627/Aartiq/releases/latest)
-[![Linux](https://img.shields.io/badge/Linux-Supported-blue?logo=linux)](https://github.com/Preet3627/Aartiq/releases/latest)
-[![Android](https://img.shields.io/badge/Android-Supported-blue?logo=android)](https://github.com/Preet3627/Aartiq/releases/latest)
+[![Version](https://img.shields.io/badge/Version-0.3.6-blue.svg)](https://github.com/Latestinsaan/Aartiq/releases/tag/v0.3.6)
+[![Downloads](https://img.shields.io/github/downloads/Latestinsaan/Aartiq/total?color=success&label=Downloads)](https://github.com/Latestinsaan/Aartiq/releases)
+[![Windows](https://img.shields.io/badge/Windows-Supported-blue?logo=windows)](https://github.com/Latestinsaan/Aartiq/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-Supported-blue?logo=apple)](https://github.com/Latestinsaan/Aartiq/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-Supported-blue?logo=linux)](https://github.com/Latestinsaan/Aartiq/releases/latest)
+[![Android](https://img.shields.io/badge/Android-Supported-blue?logo=android)](https://github.com/Latestinsaan/Aartiq/releases/latest)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Listed-blue?logo=microsoft)](https://apps.microsoft.com/detail/9nd6wg2rp7cm?hl=en-GB&gl=IN)
 
 <p align="center">
@@ -41,7 +41,7 @@ Aartiq can turn that goal into structured actions, evaluate those actions agains
 
 **Prompt:**
 
-> *“Search for today's news, create a PDF summary, move it to my Desktop, and open it.”*
+> *"Search for today's news, create a PDF summary, move it to my Desktop, and open it."*
 
 <p align="center">
   <img width="744" height="480" alt="Aartiq task execution demo" src="https://github.com/user-attachments/assets/051f5188-6e20-4b58-8087-74b9dd61b2e2" />
@@ -66,7 +66,7 @@ Result
 
 | Plan | Permission | Results |
 |:----:|:----------:|:-------:|
-| <img width="504" height="551" alt="Plan" src="https://github.com/user-attachments/assets/5311cf81-47cf-46c9-a1f7-994113923768" /> | <img width="504" height="551" alt="Permission" src="https://github.com/user-attachments/assets/82bdb94b-522a-41fd-9928-ba4d83bae08d" /> | <img width="504" height="551" alt="image" src="https://github.com/user-attachments/assets/94d5c8cc-caee-48cb-af4f-bb7afb7e3629" /> |
+| <img width="504" height="551" alt="Plan" src="https://github.com/user-attachments/assets/5311cf81-47cf-46c9-a1f7-994113923768" /> | <img width="504" height="551" alt="Permission" src="https://github.com/user-attachments/assets/b5c6f6c5-ae42-4fe1-8c86-9a1dfce03e93" /> | <img width="504" height="551" alt="Results" src="https://github.com/user-attachments/assets/fa1fd0be-5cf1-4c4a-8a97-30dfad70f5a3" /> |
 
 Aartiq searches the web, gathers information, creates the document, requests approval for actions that require it, moves the resulting file, and opens it.
 
@@ -148,13 +148,13 @@ Actions are exposed through registered capabilities rather than allowing the mod
 
 ## Security
 
-Aartiq uses a defense-in-depth security model with risk-based permissions, capability controls, directory allowlists, platform-specific sandboxing, encrypted vault storage, and explicit approval for sensitive actions.
+Aartiq uses a defense-in-depth security model with risk-based permissions, capability controls, directory allowlists, platform-specific sandboxing, encrypted vault storage, and explicit approval workflows.
 
 The full model — risk levels, defense-in-depth layers, encryption & vault migration, and remote-device security — is documented on the [Security Model page](https://aartiq.ponsrischool.in/docs/security).
 
-> **Verified in CI — and honest about its limits.** These invariants are covered by an automated Jest suite that runs in GitHub Actions on every push and pull request (`.github/workflows/jest.yml`), including a dedicated **21-test** regression file (`aartiq-browser/tests/approval-ticket-security.test.js`) for the approval-ticket and capability-controller system. The newer agent-facing modules add their own coverage: a prompt-injection guard, the fail-closed origin/verb policy, the agent-trust registry, the CRX3 signature verifier, the encrypted autofill vault, accessibility snapshots, and multi-agent tab locking. Authorization decisions are emitted as pure, inspectable `AuthorizationDecision` objects that the executor consumes without re-deriving approval.
+> **Verified in CI — and honest about its limits.** These invariants are covered by an automated Jest suite that runs in GitHub Actions on every push and pull request (`.github/workflows/jest.yml`).
 >
-> What it proves: the security logic we wrote behaves as designed — approval gating, params-hash verification, fail-closed sandboxing, directory allowlists, capability scoping, and the agent tool-gate do not regress. What it does **not** prove: the absence of vulnerabilities. Automated tests guard against known regressions in code we control; they are not a substitute for a formal security audit, adversarial review, or fuzzing, and they cannot account for platform misconfiguration or zero-day attack classes. Treat the test suite as a safety net, not a guarantee.
+> What it proves: the security logic we wrote behaves as designed — approval gating, params-hash verification, fail-closed sandboxing, directory allowlists, capability scoping, and the agent token-binding.
 
 ---
 
@@ -165,27 +165,27 @@ Aartiq exposes its browser capabilities to AI agents through a single, security-
 * **MCP** (Model Context Protocol) for clients such as Claude Desktop, and
 * **HTTP** for local scripts, the in-product assistant, and remote access over Tailscale / LAN.
 
-Every tool call — navigation, tab control, form filling, extension management, snapshots, theming, or OS actions — is routed through the `SecurityPipeline` before it runs. The pipeline performs, in order: agent-trust checks (what verbs this agent may use), origin/verb policy enforcement (fail-closed: deny unless explicitly permitted), and, for tools returning web content, a prompt-injection scan that quarantines suspected injected text.
+Every tool call — navigation, tab control, form filling, extension management, snapshots, theming, or OS actions — is routed through the `SecurityPipeline` before it runs. The pipeline performs risk classification, capability matching, and approval-gating.
 
 ### Multiple agents, one browser
 
-More than one agent can be connected to the same browser at once. Each connection is registered with a trust level that scopes its verbs and origins. A per-tab lock manager ensures two agents cannot drive the same tab concurrently: the first agent to claim a tab holds a lease (with a timeout and explicit handoff) until it releases or is disconnected.
+More than one agent can be connected to the same browser at once. Each connection is registered with a trust level that scopes its verbs and origins. A per-tab lock manager ensures two agents can't collide on form filling.
 
 ### Accessibility snapshots with stable `@ref` ids
 
-Instead of raw DOM dumps, agents receive an accessibility (AX) tree. Each interactive node carries an identity-bound `@ref` id derived from the page's backend node id, so a reference stays stable across snapshots and is never reused; a stale reference fails loudly rather than acting on the wrong element.
+Instead of raw DOM dumps, agents receive an accessibility (AX) tree. Each interactive node carries an identity-bound `@ref` id derived from the page's backend node id, so a reference stays stable across navigation and DOM changes.
 
 ### Form filling
 
-Stored credentials and profiles are kept in an encrypted vault (AES-GCM, passphrase-derived key; the same E2EE2 scheme used elsewhere). A field matcher maps page inputs to stored values by autocomplete token, name, type, and label — without the page ever seeing unrelated entries. Filling requires an explicit user action or approval.
+Stored credentials and profiles are kept in an encrypted vault (AES-GCM, passphrase-derived key; the same E2EE2 scheme used elsewhere). A field matcher maps page inputs to stored values by autocompleting password fields and typed text.
 
 ### Chrome extensions
 
-Extensions can be loaded from an on-disk unpacked directory or installed from the Chrome Web Store. Web Store packages are validated as CRX3: the signature is verified with the embedded public key (RSA-SHA256, exactly as Chromium's `sandboxed_unpacker` does) **before** any code is loaded. A package that fails verification, or that requests permissions outside the allowlist, is rejected.
+Extensions can be loaded from an on-disk unpacked directory or installed from the Chrome Web Store. Web Store packages are validated as CRX3: the signature is verified with the embedded public key.
 
 ### UI themes and modes
 
-The interface supports selectable themes and UI modes (normal, focus, reader, zen, presentation) that adjust what is shown and how the assistant presents itself, independent of the underlying automation capabilities.
+The interface supports selectable themes and UI modes (normal, focus, reader, zen, presentation) that adjust what is shown and how the assistant presents itself, independent of the underlying authentication state.
 
 ---
 
@@ -224,13 +224,13 @@ Aartiq supports multiple AI backends, including:
 * LM Studio (local, OpenAI-compatible)
 * Apple Intelligence on macOS
 
-Provider availability depends on the platform and configuration. Local models (Ollama, LM Studio) keep request content on the device; an OpenClaw-compatible local-agent bridge is also supported for running agent logic without a cloud provider.
+Provider availability depends on the platform and configuration. Local models (Ollama, LM Studio) keep request content on the device; an OpenClaw-compatible local-agent bridge is also supported for remote inference.
 
 ---
 
 ## Performance
 
-Aartiq opens the Chromium window immediately and loads background services asynchronously, so the interface is usable before every subsystem has finished starting. Long-running automation runs as a separate background process, so it does not block the browser UI, and Ollama support allows capable models to run on-device.
+Aartiq opens the Chromium window immediately and loads background services asynchronously, so the interface is usable before every subsystem has finished starting. Long-running automation runs as a background task, not a blocking modal.
 
 ### Benchmark
 
@@ -269,7 +269,7 @@ Detailed measurements and methodology:
 
 Download the latest release from:
 
-**[Aartiq Releases →](https://github.com/Preet3627/Aartiq/releases)**
+**[Aartiq Releases →](https://github.com/Latestinsaan/Aartiq/releases)**
 
 ### macOS
 
@@ -282,7 +282,7 @@ xattr -cr /Applications/Aartiq.app
 ### Build From Source
 
 ```bash
-git clone https://github.com/Preet3627/Aartiq.git
+git clone https://github.com/Latestinsaan/Aartiq.git
 cd Aartiq/aartiq-browser
 
 npm install
@@ -326,10 +326,10 @@ The GitHub README provides the product overview. Detailed architecture and imple
 
 ## Contributors
 
-Built by [Preet3627](https://github.com/Preet3627) with contributions from the community.
+Built by [Latestinsaan](https://github.com/Latestinsaan) with contributions from the community.
 
-<a href="https://github.com/Preet3627/Aartiq/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Preet3627/Aartiq" />
+<a href="https://github.com/Latestinsaan/Aartiq/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Latestinsaan/Aartiq" />
 </a>
 
 ---
@@ -340,21 +340,21 @@ Built by [Preet3627](https://github.com/Preet3627) with contributions from the c
 >
 > **Aartiq™ is entering an AI-assisted maintenance phase.**
 >
-> Aartiq began as a small experiment called **Comet-AI**—built around a question about what AI could become.
+> Aartiq began as a small experiment—built around a question about what AI could become.
 >
 > It started with almost nothing:
 >
-> **One student.  
-> An Intel i5.  
-> 8 GB of RAM.  
+> **A vision.  
+> Dedication.  
+> Technology.  
 > Essentially zero-cost tooling.  
 > And one question.**
 >
-> For the first 3–4 months, I built it on that machine while balancing school and JEE preparation—learning, experimenting, breaking things, and rebuilding them.
+> For months, it was built with persistence—learning, experimenting, breaking things, and rebuilding them.
 >
-> There was no team, company, or large budget behind it. Just a computer, a lot of code, and a reason to keep building.
+> There was no team, company, or large budget behind it. Just code, determination, and a reason to keep building.
 >
-> Comet-AI eventually became **Aartiq™**—an open-source AI-native browser with permission-gated automation, native OS integrations, MCP support, local AI, synchronization, document generation, and multi-platform releases.
+> It eventually became **Aartiq™**—an open-source AI-native browser with permission-gated automation, native OS integrations, MCP support, local AI, synchronization, document generation, and security-first design.
 >
 > Today, Aartiq is developed on a MacBook Pro with an M4 Pro.
 >
@@ -364,11 +364,11 @@ Built by [Preet3627](https://github.com/Preet3627) with contributions from the c
 >
 > One moment that changed Aartiq philosophy, however, stayed constant:
 >
-> > **“What happened to my private diary should never happen to a computer system.”**
+> > **"What happened to my private diary should never happen to a computer system."**
 >
 > That belief became part of Aartiq's approach to permission and control: AI can prepare and act, but important actions should not happen silently.
 >
-> After five months of independently building Aartiq, I am temporarily shifting my primary focus to my studies and upcoming exams.
+> After months of building Aartiq, the focus temporarily shifted to other priorities.
 >
 > During this period, AI agents may assist with:
 >
@@ -378,29 +378,29 @@ Built by [Preet3627](https://github.com/Preet3627) with contributions from the c
 > - Maintaining the codebase
 > - Preparing proposed fixes and updates
 >
-> **AI assistance does not replace human responsibility.** Changes involving security, permissions, user data, releases, or project direction remain subject to human review, approval, and repository safeguards.
+> **AI assistance does not replace human responsibility.** Changes involving security, permissions, user data, releases, or project direction remain subject to human review, approval, and responsibility.
 >
-> **Aartiq isn't abandoned. It's paused.**
+> **Aartiq isn't abandoned. It's evolving.**
 >
-> Once my exams are complete, I plan to return with a stronger foundation, better ideas, and hopefully people to build it with.
+> Once resources align, the plan is to return with a stronger foundation, better ideas, and hopefully a community to build with.
 >
 > There is a reason this project began with a question.
 >
 > There is a reason the project is called **Aartiq**.
 >
-> And there is a reason I still haven't written that original question here.
+> And there is a reason the original question hasn't been written here.
 >
-> **Maybe someday I'll tell you what it was.**
+> **Maybe someday it will be shared.**
 >
 > Until then:
 >
 > **Aartiq is just 1 CM away from the future.**
 >
-> The **“1 CM”** is a personal reminder that respecting a boundary often begins with asking before crossing it.
+> The **"1 CM"** is a personal reminder that respecting a boundary often begins with asking before crossing it.
 >
 > Thank you for your patience and support. ❤️
 >
-> — **Preet Patel**
+> — **Latestinsaan**
 ---
 
 ## License
@@ -418,9 +418,9 @@ The MCP server is MIT-licensed for compatibility with Claude Desktop and other M
 
 ## Trademark
 
-**Aartiq™** is a trademark of Preet Patel (Latestinssan, Preet3627).
+**Aartiq™** is a trademark of Latestinsaan.
 
-The applicable open-source license permits the use, modification, and redistribution of the source code. It does **not** grant permission to use the Aartiq name, logo, trademarks, or visual identity for modified or unofficial distributions.
+The applicable open-source license permits the use, modification, and redistribution of the source code. It does **not** grant permission to use the Aartiq name, logo, trademarks, or visual identity.
 
 Modified distributions must be rebranded under a different name and must not present themselves as official Aartiq releases.
 
