@@ -692,7 +692,7 @@ public static class JobRunnerNative {
                 // grants) provides the filesystem isolation.
                 UIntPtr attrSize = UIntPtr.Zero;
                 InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attrSize);
-                IntPtr attrList = Marshal.AllocHGlobal(attrSize);
+                IntPtr attrList = Marshal.AllocHGlobal((IntPtr)attrSize);
                 try {
                     if (!InitializeProcThreadAttributeList(attrList, 1, 0, ref attrSize)) {
                         error = "InitializeProcThreadAttributeList failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
