@@ -137,43 +137,69 @@ const psExists = canRunWin && fs.existsSync(psExe);
 
 const winRuntime = psExists ? describe : describe.skip;
 
+// GitHub-hosted Windows runners occasionally cold-start the AppContainer
+// provisioner; a verified sandbox result is mandatory, so only transient
+// setup failures (no marker / sandboxed:false from the helper) are retried.
+// Enforcement assertions still fail closed after all attempts.
+async function runSandboxed(cmd, argv, opts) {
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await sandbox.executeSandboxed(cmd, argv, opts);
+    last = res;
+    if (res.sandboxed === true) return res;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+  }
+  return last;
+}
+
+function assertVerifiedSandbox(res, label) {
+  assert.strictEqual(res.sandboxed, true, `${label}: ${res.error || res.stderr || 'no helper result'}`);
+  assert.strictEqual(
+    res.jobAssigned,
+    true,
+    `${label}: target must be verified inside the Job Object: ${res.error || res.stderr || res.stdout || ''}`
+  );
+  assert.strictEqual(
+    res.appContainer,
+    true,
+    `${label}: target must be verified as an AppContainer: ${res.error || res.stderr || res.stdout || ''}`
+  );
+  assert.strictEqual(res.success, true, `${label}: ${res.error || res.stderr || ''}`);
+  return res;
+}
+
 winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', () => {
   it('target starts suspended as an AppContainer, is assigned to the job, and runs', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
-    const res = await sandbox.executeSandboxed('cmd.exe', ['/c', 'echo contained'], {
+    const res = await runSandboxed('cmd.exe', ['/c', 'echo contained'], {
       useSandbox: true,
       workspace: wsDir,
     });
-    assert.strictEqual(res.sandboxed, true);
-    assert.strictEqual(res.jobAssigned, true, 'target must be verified inside the Job Object');
-    assert.strictEqual(res.appContainer, true, 'target must be verified as an AppContainer');
-    assert.strictEqual(res.success, true);
+    assertVerifiedSandbox(res, 'start-suspended');
     assert.deepStrictEqual(res.isolation, WIN_ISOLATION);
   });
 
   it('grandchildren spawned by the target remain inside the job', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
     // cmd -> cmd -> echo: the grandchild must still be contained by the job.
-    const res = await sandbox.executeSandboxed(
+    const res = await runSandboxed(
       'cmd.exe',
       ['/c', 'cmd.exe /c echo grandchild'],
       { useSandbox: true, workspace: wsDir }
     );
-    assert.strictEqual(res.sandboxed, true);
-    assert.strictEqual(res.jobAssigned, true);
-    assert.strictEqual(res.success, true);
+    assertVerifiedSandbox(res, 'grandchild-containment');
   });
 
   it('secrets do not enter the sandbox environment', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
     process.env.AWS_SECRET_ACCESS_KEY = 'should-not-leak';
     try {
-      const res = await sandbox.executeSandboxed(
+      const res = await runSandboxed(
         'cmd.exe',
         ['/c', 'echo %AWS_SECRET_ACCESS_KEY%'],
         { useSandbox: true, workspace: wsDir }
       );
-      assert.strictEqual(res.sandboxed, true);
+      assertVerifiedSandbox(res, 'secret-isolation');
       assert.ok(!String(res.stdout).includes('should-not-leak'), 'secret must not leak into sandbox');
     } finally {
       delete process.env.AWS_SECRET_ACCESS_KEY;
@@ -187,12 +213,12 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     fs.writeFileSync(secretFile, 'classified', 'utf8');
     // Type can reach it via cmd only if the AppContainer ACLs allow it; the
     // secret directory is NOT in the allowlist so access must be DENIED.
-    const res = await sandbox.executeSandboxed(
+    const res = await runSandboxed(
       'cmd.exe',
       ['/c', `type "${secretFile}"`],
       { useSandbox: true, workspace: wsDir }
     );
-    assert.strictEqual(res.sandboxed, true);
+    assertVerifiedSandbox(res, 'non-allowlisted-read');
     assert.ok(!String(res.stdout).includes('classified'), 'non-allowlisted file must stay unreadable');
   });
 
@@ -206,7 +232,13 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
       ['/c', `ping -n 30 127.0.0.1 >nul & echo done > "${targetFile}"`],
       { workspace: wsDir }
     );
-    const child = spawn(config.command, config.args, { stdio: 'ignore' });
+    const child = spawn(config.command, config.args, {
+      stdio: 'ignore',
+      timeout: 45000,
+    });
+    child.on('error', (err) => {
+      assert.fail(`helper failed to start: ${err.message}`);
+    });
     // Let the (long) target start, then kill the helper after a short delay.
     await new Promise((r) => setTimeout(r, 2000));
     child.kill('SIGKILL');
@@ -215,5 +247,5 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     // If KILL_ON_JOB_CLOSE worked, the target ping was terminated and never
     // wrote the file.
     assert.ok(!fs.existsSync(targetFile), 'target must be killed when the helper exits');
-  });
+  }, 60000);
 });

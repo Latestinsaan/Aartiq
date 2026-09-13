@@ -21,6 +21,13 @@ const SANDBOX_ERROR_CODES = [
   'SANDBOX_POLICY_INVALID',
 ];
 
+// POSIX-shell or real-binary-dependent tests cannot run on Windows CI (no sh,
+// extensionless scripts are not spawnable). macOS-only runtime suites skip
+// everywhere else. Using it.skip/describe.skip (not this.skip()) keeps the
+// suites green on every platform without executing macOS-only enforcement.
+const posixIt = process.platform === 'win32' ? it.skip : it;
+const darwinIt = process.platform === 'darwin' ? it : it.skip;
+
 // ---------------------------------------------------------------------------
 // Structured failures
 // ---------------------------------------------------------------------------
@@ -54,11 +61,6 @@ describe('createFailure / SandboxError', () => {
 // ---------------------------------------------------------------------------
 
 describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', () => {
-  // Fake-sandbox-exec tests spawn POSIX shell scripts; profile-write tests
-  // need a real /usr/bin/sandbox-exec. Gate by platform so non-POSIX CI
-  // runners report an honest SKIP instead of a misleading failure.
-  const posixIt = process.platform === 'win32' ? it.skip : it;
-  const darwinIt = process.platform === 'darwin' ? it : it.skip;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-security-'));
   const ws = path.join(tmpDir, 'workspace');
   const rwDir = path.join(tmpDir, 'rw');
@@ -272,7 +274,7 @@ describe('Linux bubblewrap (buildBubblewrapArgs / createLinuxSandbox)', () => {
     }
   });
 
-  it('should produce a linux launch config when bwrap is functional', () => {
+  posixIt('should produce a linux launch config when bwrap is functional', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-security-'));
     const fakeBwrap = path.join(tmpDir, 'fake-bwrap-ok');
     // Must satisfy both the --version probe and the namespace-capability probe
@@ -551,7 +553,7 @@ describe('useSandbox:false explicit escape hatch', () => {
 
   afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
 
-  it('should run unsandboxed but still report sandboxed:false', async () => {
+  posixIt('should run unsandboxed but still report sandboxed:false', async () => {
     const res = await sandbox.executeSandboxed('/bin/echo', ['unsandboxed'], {
       useSandbox: false,
       workspace: ws,
@@ -561,7 +563,7 @@ describe('useSandbox:false explicit escape hatch', () => {
     assert.ok(String(res.stdout).includes('unsandboxed'));
   });
 
-  it('should preserve arguments verbatim in direct execution', async () => {
+  posixIt('should preserve arguments verbatim in direct execution', async () => {
     const printfBin = fs.existsSync('/usr/bin/printf') ? '/usr/bin/printf' : '/bin/printf';
     const res = await sandbox.executeSandboxed(printfBin, ['%s', 'a b "c" \\d'], {
       useSandbox: false,
@@ -571,7 +573,7 @@ describe('useSandbox:false explicit escape hatch', () => {
     assert.strictEqual(res.stdout, 'a b "c" \\d');
   });
 
-  it('executeShellScript should pass the script verbatim as one argument', async () => {
+  posixIt('executeShellScript should pass the script verbatim as one argument', async () => {
     const res = await sandbox.executeShellScript('echo "hello world"', { useSandbox: false, workspace: ws });
     assert.strictEqual(res.success, true);
     assert.strictEqual(res.stdout, 'hello world');
