@@ -931,24 +931,38 @@ function Invoke-SandboxSetup {
   $sidOk = [JobRunnerNative]::ConvertSidToStringSid($script:acSidPtr, [ref]$sidStrPtr)
   if ($sidOk -and $sidStrPtr -ne [IntPtr]::Zero) {
     $script:acSid = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($sidStrPtr)
-    # ConvertSidToStringSid returns LocalAlloc'd memory.
-    [JobRunnerNative]::LocalFree($sidStrPtr)
+    # ConvertSidToStringSid returns LocalAlloc'd memory. Discard the IntPtr
+    # return so it cannot leak into the function's pipeline output.
+    [void][JobRunnerNative]::LocalFree($sidStrPtr)
   }
   if (-not $script:acSid) {
     return 'AppContainer package SID string conversion failed'
   }
 
   # 3. AppContainer profile folder -> isolated TEMP/TMP/LOCALAPPDATA.
+  #    GetAppContainerFolderPath can return ERROR_NO_SUCH_PACKAGE on some hosts
+  #    even though CreateAppContainerProfile succeeded (the Packages\<name>
+  #    folder is not provisioned for a name-created container). Fall back to the
+  #    canonical location Chromium uses, which the container can access through
+  #    its implicit package-folder grant.
   $folderPtr = [IntPtr]::Zero
   $hr2 = [JobRunnerNative]::GetAppContainerFolderPath($containerName, [ref]$folderPtr)
+  $script:acFolder = $null
   if ($hr2 -eq 0 -and $folderPtr -ne [IntPtr]::Zero) {
     $script:acFolder = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($folderPtr)
     # GetAppContainerFolderPath returns CoTaskMemAlloc'd memory.
     [System.Runtime.InteropServices.Marshal]::FreeCoTaskMem($folderPtr)
+  } else {
+    $candidate = Join-Path $env:LOCALAPPDATA ('Packages\' + $containerName)
+    try {
+      New-Item -ItemType Directory -Force -Path $candidate | Out-Null
+      $script:acFolder = $candidate
+    } catch {
+      $script:acFolder = $null
+    }
   }
   if (-not $script:acFolder) {
-    if ($hr2 -ne 0) { return ("GetAppContainerFolderPath failed (0x{0:X8}); ptr={1}" -f $hr2, $folderPtr) }
-    return ("GetAppContainerFolderPath failed (empty path); hr2=0; ptr={0}; createHr=0x{1:X8}" -f $folderPtr, $hr)
+    return ("AppContainer profile folder unavailable (GetAppContainerFolderPath 0x{0:X8})" -f $hr2)
   }
   New-Item -ItemType Directory -Force -Path (Join-Path $script:acFolder 'Temp') | Out-Null
   $envDict['TEMP'] = Join-Path $script:acFolder 'Temp'
