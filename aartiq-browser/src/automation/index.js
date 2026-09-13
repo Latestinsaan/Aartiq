@@ -17,12 +17,16 @@ class AutomationLayer {
     const native = this._loadNative();
     if (native) {
       try {
-        await native.initialize();
-        this.automation = native;
-        this.source = 'native';
-        console.log(`[Automation] Initialized with native (${PLATFORM})`);
-        this.initialized = true;
-        return true;
+        // A backend reports unavailability (e.g. Linux without xdotool/xte) by
+        // returning false; only adopt it when it really works so isAvailable
+        // stays honest and uninvokable actions fail closed instead of throwing.
+        if (await native.initialize()) {
+          this.automation = native;
+          this.source = 'native';
+          console.log(`[Automation] Initialized with native (${PLATFORM})`);
+          this.initialized = true;
+          return true;
+        }
       } catch (err) {
         console.warn('[Automation] Native failed:', err.message);
       }

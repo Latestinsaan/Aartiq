@@ -4,29 +4,33 @@ const path = require('path');
 let isInitialized = false;
 let useXdotool = true;
 let useXdotest = false;
+let available = false;
 
 async function initialize() {
-  if (isInitialized) return true;
+  if (isInitialized) return available;
   
   try {
     execSync('which xdotool', { stdio: 'ignore' });
     useXdotool = true;
+    available = true;
     console.log('[Automation/Linux] Using xdotool');
   } catch {
     try {
       execSync('which xte', { stdio: 'ignore' });
       useXdotool = false;
       useXdotest = true;
+      available = true;
       console.log('[Automation/Linux] Using xte/xinput');
     } catch {
       console.log('[Automation/Linux] Using xdotest (X11)');
       useXdotool = false;
       useXdotest = false;
+      available = false;
     }
   }
   
   isInitialized = true;
-  return true;
+  return available;
 }
 
 function moveMouse(x, y) {
@@ -163,5 +167,5 @@ module.exports = {
   keyTap,
   scroll,
   getMousePos,
-  isAvailable: true
+  get isAvailable() { return available; }
 };

@@ -23,12 +23,16 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: '22'
+  # Node 24.9+ required: several transitive deps (e.g. jsdom -> html-encoding-sniffer
+  # -> @exodus/bytes) are ESM-only and jest needs Node >= 24.9 to synchronously
+  # require() them in the in-band full suite. Node 22 crashes that load.
+  NODE_VERSION: '24'
 
 jobs:
   jest:
     name: Run Jest (aartiq-browser)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: ${{ !inputs.windows-test-pattern && !inputs.skip-full-suite }}
     defaults:
       run:
@@ -50,7 +54,7 @@ jobs:
         run: npm ci
 
       - name: Run Jest
-        run: npm test -- --ci --runInBand
+        run: npm test -- --ci --runInBand --forceExit
 
   # Windows runtime verification for the AppContainer + Job Object sandbox.
   # The macOS/Linux runtime tests skip on Windows, but the runtime matrix in

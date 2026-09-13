@@ -179,7 +179,7 @@ public static class JobRunnerNative {
         uint dwCreationFlags,
         IntPtr lpEnvironment,
         string lpCurrentDirectory,
-        ref STARTUPINFOEX lpStartupInfo,
+        IntPtr lpStartupInfo,
         out PROCESS_INFORMATION lpProcessInformation);
 
     // ---- Token isolation (restricted token + integrity level) ----
@@ -729,11 +729,21 @@ public static class JobRunnerNative {
                     siex.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEX));
                     siex.lpAttributeList = attrList;
 
-                    // bInheritHandles=true propagates our std handles.
-                    if (!CreateProcessW(null, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
-                            true, flags | EXTENDED_STARTUPINFO_PRESENT, envPtr, cwd, ref siex, out pi)) {
-                        error = "CreateProcessW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 4;
+                    // Marshal the STARTUPINFOEX into unmanaged memory and pass a
+                    // pointer: the P/Invoke marshaller's buffered `ref` copy of an
+                    // embedded STARTUPINFO+attribute-list struct is what tripped an
+                    // AccessViolationException in CreateProcessW on some hosts.
+                    IntPtr siexPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(STARTUPINFOEX)));
+                    try {
+                        Marshal.StructureToPtr(siex, siexPtr, false);
+                        // bInheritHandles=true propagates our std handles.
+                        if (!CreateProcessW(null, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
+                                true, flags | EXTENDED_STARTUPINFO_PRESENT, envPtr, cwd, siexPtr, out pi)) {
+                            error = "CreateProcessW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                            return 4;
+                        }
+                    } finally {
+                        Marshal.FreeHGlobal(siexPtr);
                     }
                     appContainer = true;
                 } finally {
