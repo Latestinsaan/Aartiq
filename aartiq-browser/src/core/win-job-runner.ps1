@@ -595,6 +595,7 @@ public static class JobRunnerNative {
         IntPtr envPtr = IntPtr.Zero;
         IntPtr attrList = IntPtr.Zero;
         IntPtr capsPtr = IntPtr.Zero;
+        IntPtr hToken = IntPtr.Zero;
 
         try {
             // Apply and verify limits BEFORE the target runs.
@@ -639,7 +640,7 @@ public static class JobRunnerNative {
                     error = "DuplicateTokenEx failed (0x" + rc.ToString("X8") + ")";
                     return 3;
                 }
-                IntPtr hToken = primaryToken;
+                hToken = primaryToken;
                 if (useAppContainer) {
                     // Restricted token: dangerous privileges deleted + Low IL.
                     rc = CreateRestrictedLowToken(primaryToken, out restrictedToken);
