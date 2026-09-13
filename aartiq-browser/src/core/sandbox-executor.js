@@ -787,10 +787,13 @@ function parseWindowsHelperOutput(stdout, stderr) {
     };
   }
   if (parsed && parsed.sandboxed === false) {
+    const rawPayload = (() => {
+      try { return JSON.stringify(parsed); } catch (e) { return String(parsed); }
+    })();
     const detail = [
       parsed.error,
       stderr,
-      parsed.code ? `code=${parsed.code}` : '',
+      `raw=${rawPayload}`,
       'Windows sandbox setup failed'
     ]
       .filter((p) => p !== undefined && p !== null && String(p).trim() !== '')

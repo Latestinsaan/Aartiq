@@ -947,7 +947,8 @@ function Invoke-SandboxSetup {
     [System.Runtime.InteropServices.Marshal]::FreeCoTaskMem($folderPtr)
   }
   if (-not $script:acFolder) {
-    return 'GetAppContainerFolderPath failed'
+    if ($hr2 -ne 0) { return ("GetAppContainerFolderPath failed (0x{0:X8}); ptr={1}" -f $hr2, $folderPtr) }
+    return ("GetAppContainerFolderPath failed (empty path); hr2=0; ptr={0}; createHr=0x{1:X8}" -f $folderPtr, $hr)
   }
   New-Item -ItemType Directory -Force -Path (Join-Path $script:acFolder 'Temp') | Out-Null
   $envDict['TEMP'] = Join-Path $script:acFolder 'Temp'
