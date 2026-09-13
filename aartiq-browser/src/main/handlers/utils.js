@@ -251,17 +251,13 @@ exports.execShellCommand = async function(rawCommand, preApproved, reason, riskL
   //      - low risk      → unsandboxed (explicit escape hatch; env still
   //                        sanitized, result reports sandboxed:false)
   //      - medium+ risk  → sandboxed (filesystem confined, network denied on
-  //                        macOS/Linux where the sandbox enforces it)
-  //      - high/critical → sandboxed + deny all network
-  //
-  //    Windows cannot enforce per-process network policy in this release
-  //    (Job Object containment only), so networkAllowlist is never passed on
-  //    win32 — requesting it there would fail closed.
+  //                        macOS/Linux; Windows now enforces both via the
+  //                        AppContainer principal)
+  //      - high/critical → sandboxed + deny all network (on Windows this is
+  //                        the AppContainer's zero-capability default)
   const useSandbox = effectiveRisk !== 'low';
   const denyNetwork = effectiveRisk === 'high' || effectiveRisk === 'critical';
-  const networkAllowlist = process.platform === 'win32'
-    ? undefined
-    : (denyNetwork ? [] : undefined);
+  const networkAllowlist = denyNetwork ? [] : undefined;
 
   // Build the directory allowlist for the sandbox profile. Missing/removed
   // directories are a policy error inside the sandbox (fail closed); the

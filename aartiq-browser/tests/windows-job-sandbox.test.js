@@ -1,17 +1,19 @@
 /**
- * windows-job-sandbox.test.js — Windows Job Object containment test matrix.
+ * windows-job-sandbox.test.js — Windows AppContainer + Job Object test matrix.
  *
  * Layered so it is USEFUL ON EVERY PLATFORM:
  *   - "JS contract & invariants" tests run anywhere (Node + the runner script
  *     text). They assert the security-critical guarantees are encoded and that
  *     the JS layer fails closed. This is what runs in CI on macOS/Linux.
  *   - "runtime containment" tests run ONLY on win32 with PowerShell present and
- *     exercise the real runner: suspended start, verified job assignment,
- *     grandchild containment, secret isolation, and KILL_ON_JOB_CLOSE.
+ *     exercise the real runner: suspended AppContainer start, verified job
+ *     assignment, grandchild containment, secret isolation, and
+ *     KILL_ON_JOB_CLOSE.
  *
  * The runtime block is the dedicated Windows test matrix called for in review:
  * it should be executed on a Windows CI matrix (multiple Windows versions /
- * configurations) because Job Object + nested-job semantics vary by build.
+ * configurations) because Job Object + AppContainer + nested-job semantics
+ * vary by build.
  */
 
 const assert = require('assert');
@@ -22,24 +24,45 @@ const { spawn } = require('child_process');
 
 const sandbox = require('../src/core/sandbox-executor');
 
-const WIN_ISOLATION = { filesystem: false, network: false, process: true };
+const WIN_ISOLATION = { filesystem: true, network: true, process: true };
 const NO_ISOLATION = { filesystem: false, network: false, process: false };
 
-describe('Windows Job Object — JS contract & invariants', () => {
-  it('reports process containment only (no OS-level FS/network isolation)', () => {
+function readStagedPayload(config) {
+  const payloadPath = config.args[config.args.length - 1];
+  return JSON.parse(fs.readFileSync(payloadPath, 'utf8'));
+}
+
+describe('Windows AppContainer sandbox — JS contract & invariants', () => {
+  it('reports full OS-level isolation (filesystem/network/process)', () => {
     const config = sandbox.createWindowsSandbox('node', ['--version'], {});
     assert.deepStrictEqual(config.isolation, WIN_ISOLATION);
     assert.strictEqual(config.platform, 'win32');
   });
 
-  it('fails closed when a network policy is requested (cannot enforce on Windows)', () => {
+  it('denies all network by default (empty/absent allowlist) and stages an AppContainer payload', () => {
+    const config = sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], {});
+    const payload = readStagedPayload(config);
+    assert.strictEqual(payload.sandbox.useAppContainer, true, 'must run as an AppContainer by default');
+    assert.strictEqual(payload.sandbox.integrityLevel, 'low');
+    assert.ok(Array.isArray(payload.sandbox.readDirs), 'readDirs must be carried into the sandbox');
+    assert.ok(Array.isArray(payload.sandbox.writeDirs), 'writeDirs must be carried into the sandbox');
+    config.cleanup();
+  });
+
+  it('accepts an empty networkAllowlist (enforced deny-all: zero AppContainer capabilities)', () => {
+    const config = sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], { networkAllowlist: [] });
+    assert.deepStrictEqual(config.isolation, WIN_ISOLATION);
+    config.cleanup();
+  });
+
+  it('fails closed on a non-empty network policy (per-domain allowlist unsupported for AppContainer)', () => {
     assert.throws(
-      () => sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], { networkAllowlist: [] }),
+      () => sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], { networkAllowlist: ['api.openai.com'] }),
       (e) => e.code === 'SANDBOX_UNAVAILABLE'
     );
   });
 
-  it('rejects a missing allowlist path even though Windows does not enforce FS at OS level', () => {
+  it('rejects a missing allowlist path (policy error, never silently ignored)', () => {
     assert.throws(
       () => sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], {
         directoryAllowlist: [{ path: '/nonexistent/x', access: 'read-write' }],
@@ -48,19 +71,33 @@ describe('Windows Job Object — JS contract & invariants', () => {
     );
   });
 
-  it('encodes the suspended-start + verified-assignment + kill-on-close invariants', () => {
+  it('encodes the AppContainer + restricted-token + verified-assignment invariants', () => {
     const runner = sandbox.getWindowsJobRunnerScript();
-    // Target must be created SUSPENDED and only resumed after assignment.
+    // OS-level isolation is AppContainer-based, not process-only.
+    assert.ok(/CreateAppContainerProfile/.test(runner), 'must create an AppContainer profile');
+    assert.ok(/DeriveAppContainerSidFromAppContainerName/.test(runner), 'must derive the package SID when the profile exists');
+    assert.ok(/GetAppContainerFolderPath/.test(runner), 'must isolate TEMP/LOCALAPPDATA into the AC profile folder');
+    assert.ok(/DeleteAppContainerProfile/.test(runner), 'must delete the AC profile after the run');
+    // The SECURITY_CAPABILITIES startup-info attribute list is what makes the
+    // target an AppContainer at creation time (LaunchAppContainer pattern).
+    assert.ok(/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/.test(runner), 'must pass SECURITY_CAPABILITIES via attribute list');
+    assert.ok(/EXTENDED_STARTUPINFO_PRESENT/.test(runner), 'must set EXTENDED_STARTUPINFO_PRESENT');
+    assert.ok(/InitializeProcThreadAttributeList/.test(runner), 'must size/initialize the attribute list');
+    // The allowlist is OS-enforced via package-SID ACL grants.
+    assert.ok(/Invoke-IntegrityGrant/.test(runner), 'must grant the package SID on allowlisted paths');
+    // The old mechanism must be gone: the OS builds the AC token from the
+    // attribute list — we never create an AppContainer token explicitly.
+    assert.ok(!/CreateAppContainerToken/.test(runner), 'must NOT use CreateAppContainerToken');
+    // Restricted token: dangerous privileges deleted + Low integrity.
+    assert.ok(/CreateRestrictedToken/.test(runner), 'must build a restricted token');
+    assert.ok(/SeChangeNotifyPrivilege/.test(runner), 'must keep traversal privilege');
+    assert.ok(/TOKEN_MANDATORY_LABEL/.test(runner), 'must set the Low mandatory integrity label');
+    // Job Object guarantees survive alongside AppContainer isolation.
     assert.ok(/CREATE_SUSPENDED/.test(runner), 'target must be created suspended');
-    // Break away from any parent job so OUR job owns the process. This is the
-    // CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB combination under review.
     assert.ok(/CREATE_BREAKAWAY_FROM_JOB/.test(runner), 'must break away from a parent job');
-    // Must verify the assignment before resuming (cannot assume success).
     assert.ok(/IsProcessInJob/.test(runner), 'must verify assignment into the job');
     assert.ok(/AssignProcessToJobObject/.test(runner), 'must assign to the job before resume');
-    // Whole tree dies if the helper (job owner) exits.
     assert.ok(/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/.test(runner), 'must kill tree on helper exit');
-    // Limits are applied and verified before the target runs.
     assert.ok(/JOB_OBJECT_LIMIT_ACTIVE_PROCESS/.test(runner), 'must cap active processes');
   });
 
@@ -100,8 +137,8 @@ const psExists = canRunWin && fs.existsSync(psExe);
 
 const winRuntime = psExists ? describe : describe.skip;
 
-winRuntime('Windows Job Object — runtime containment (win32 only)', () => {
-  it('target starts suspended, is assigned to the job, and runs', async function () {
+winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', () => {
+  it('target starts suspended as an AppContainer, is assigned to the job, and runs', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
     const res = await sandbox.executeSandboxed('cmd.exe', ['/c', 'echo contained'], {
       useSandbox: true,
@@ -109,6 +146,7 @@ winRuntime('Windows Job Object — runtime containment (win32 only)', () => {
     });
     assert.strictEqual(res.sandboxed, true);
     assert.strictEqual(res.jobAssigned, true, 'target must be verified inside the Job Object');
+    assert.strictEqual(res.appContainer, true, 'target must be verified as an AppContainer');
     assert.strictEqual(res.success, true);
     assert.deepStrictEqual(res.isolation, WIN_ISOLATION);
   });
@@ -140,6 +178,22 @@ winRuntime('Windows Job Object — runtime containment (win32 only)', () => {
     } finally {
       delete process.env.AWS_SECRET_ACCESS_KEY;
     }
+  });
+
+  it('the sandbox cannot read a directory that is not allowlisted', async function () {
+    const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
+    const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-secret-'));
+    const secretFile = path.join(secretDir, 'secret.txt');
+    fs.writeFileSync(secretFile, 'classified', 'utf8');
+    // Type can reach it via cmd only if the AppContainer ACLs allow it; the
+    // secret directory is NOT in the allowlist so access must be DENIED.
+    const res = await sandbox.executeSandboxed(
+      'cmd.exe',
+      ['/c', `type "${secretFile}"`],
+      { useSandbox: true, workspace: wsDir }
+    );
+    assert.strictEqual(res.sandboxed, true);
+    assert.ok(!String(res.stdout).includes('classified'), 'non-allowlisted file must stay unreadable');
   });
 
   it('helper termination kills the target before it completes (KILL_ON_JOB_CLOSE)', async function () {

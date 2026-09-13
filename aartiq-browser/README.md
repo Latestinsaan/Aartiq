@@ -114,7 +114,7 @@ AI file access is restricted to user-approved directories via a configurable all
 ### Vault & Credentials
 
 - Vault encryption key stored in native OS keychain (not plaintext config)
-- Windows Job Object containment for process isolation (process limits only; no OS-level filesystem/network isolation)
+- Windows AppContainer OS-level sandboxing (restricted Low-IL token + Job Object; directory allowlist and network policy enforced by the OS via the AppContainer package SID)
 - WebAuthn credentials in `~/.aartiq/webauthn-credentials.json` (mode `0600`)
 
 ## Context Compaction

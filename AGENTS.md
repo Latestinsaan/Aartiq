@@ -12,7 +12,7 @@ Aartiq is guided by a small set of firm principles that should inform every engi
 - **AI-native, not AI-bolted-on.** The assistant is a first-class citizen of the browser, capable of reading, acting, automating, and creating with explicit user permission.
 - **Human-in-the-loop, always.** Autonomy is permission-gated. Destructive or high-risk actions require approval, biometrics (Touch ID / Windows Hello), or QR confirmation. The machine proposes; the human disposes.
 - **Open by default.** Aartiq is open source (Apache-2.0 browser core / MIT MCP server). Trust is earned by reading the code, not a privacy policy.
-- **Secure by architecture.** A six-layer defense-in-depth model — visual sandbox & SecureDOM, syntactic firewall, human-in-the-loop, directory allowlist, OS-level sandboxing (Seatbelt/bubblewrap/Job Objects), and capability-scoped execution — keeps automation safe. Sandbox failures fail closed.
+- **Secure by architecture.** A six-layer defense-in-depth model — visual sandbox & SecureDOM, syntactic firewall, human-in-the-loop, directory allowlist, OS-level sandboxing (Seatbelt / bubblewrap / AppContainer + Job Objects), and capability-scoped execution — keeps automation safe. Sandbox failures fail closed.
 - **Empower, don't replace.** Aartiq augments human productivity (scheduling, document generation, research, OS control) with the user firmly in control.
 
 When contributing, prefer designs that preserve local-first execution, minimize data egress, keep the human in the approval loop for risky actions, and stay open and auditable.

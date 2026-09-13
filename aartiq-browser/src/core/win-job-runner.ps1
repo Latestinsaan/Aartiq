@@ -1,5 +1,5 @@
 # ============================================================================
-# win-job-runner.ps1 — Aartiq Windows Job Object containment runner.
+# win-job-runner.ps1 — Aartiq Windows OS-level sandbox runner.
 #
 # SECURITY INVARIANTS
 # -------------------
@@ -9,12 +9,49 @@
 # 2. Job Object handles remain open (held by this process) for the entire
 #    target-process lifetime. JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE guarantees
 #    the whole process tree is terminated if this helper exits.
-# 3. Limits (active process count, job memory, kill-on-close, unhandled
-#    exception isolation) are applied and verified before the target resumes.
+# 3. When `sandbox.useAppContainer` is true (the default), the target runs
+#    under an APP CONTAINER (a Windows 8+ OS-enforced isolation principal):
+#      - Restricted token: dangerous privileges are DELETED from the token
+#        (SeDebug, SeImpersonate, SeLoadDriver, SeRestore, ...). The process
+#        cannot enable any of them no matter what it runs. SeChangeNotify
+#        (traverse) is retained so legitimate paths still resolve.
+#      - Low mandatory integrity level (S-1-16-4096): the process cannot
+#        write to medium/high integrity objects. This is OS-ENFORCED — the
+#        process kernel token carries the label, it is not an application
+#        convention.
+#      - AppContainer principal (SECURITY_CAPABILITIES + StartupInfoEx
+#        attribute list, the Microsoft LaunchAppContainer pattern): the OS
+#        builds an AppContainer token from our restricted token. Filesystem,
+#        registry, window, device and network isolation are enforced by the
+#        kernel via the AppContainer SID. The container ships with ZERO
+#        capabilities, so it CANNOT initiate network traffic (no
+#        internetClient / anyNetwork). Read/write is permitted ONLY to paths
+#        whose ACL explicitly grants the package SID — the allowlisted
+#        directories, the sandbox workspace, and the AppContainer profile
+#        folder (LOCALAPPDATA/TEMP rerouted by the OS).
+#      - Directory allowlist is OS-ENFORCED: before the target is launched,
+#        this helper grants the derived package SID read(+execute) access to
+#        every allowlisted read directory and read+write+execute (modify) to
+#        every allowlisted write directory and the workspace, via icacls.
+#        Anything the allowlist does not enumerate stays DENIED by default.
+#      - Grants and the profile are best-effort removed after the run so no
+#        persistent ACL residue or orphan profile survives on the user's
+#        machine.
 # 4. Every setup step failure returns a structured error and exits non-zero;
-#    the target is never allowed to run uncontained.
-# 5. This is process confinement ONLY. It does NOT provide filesystem or
-#    network isolation — callers must not claim that it does.
+#    the target is never allowed to run uncontained. If `useAppContainer`
+#    cannot be satisfied (old OS, API failure, grant failure on a writable
+#    path), the runner FAILS CLOSED — it never silently degrades to a
+#    less-isolated profile.
+# 5. The verification loop runs after setup: Job Object membership is
+#    re-checked before the target resumes. (The AppContainer SID and Low
+#    integrity label are carried by the kernel token at creation.)
+#
+# Reference: this mirrors Microsoft's LaunchAppContainer sample
+# (microsoft/SandboxSecurityTools) and the "Launch an AppContainer" and
+# "Processes in the Client Security Context" documentation. CreateProcessAsUser
+# does not require SE_ASSIGNPRIMARYTOKEN/SE_INCREASE_QUOTA because the token
+# passed to it is created via CreateRestrictedToken from the caller's own
+# primary token.
 #
 # Usage: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass `
 #          -File win-job-runner.ps1 <payload.json>
@@ -28,11 +65,19 @@
 #   "maxProcesses": 64,               // active process limit (>0)
 #   "maxMemoryBytes": 0,              // 0 = no job memory limit
 #   "timeoutMs": 30000                // 0 = no timeout
+#   "sandbox": {
+#     "useAppContainer": true,        // true -> AppContainer isolation (default)
+#     "integrityLevel": "low",        // 'low' (S-1-16-4096)
+#     "readDirs": ["..."],            // dirs granted read+execute to the AC SID
+#     "writeDirs": ["..."],           // dirs granted modify to the AC SID
+#     "workspace": "..."              // sandbox workspace (always read-write)
+#   }
 # }
 #
 # The last stdout line that starts with the AARTIQ_SANDBOX_RESULT: marker is a
 # JSON result object:
-#   AARTIQ_SANDBOX_RESULT:{"exitCode":n,"sandboxed":true,"sandboxPlatform":"win32","jobAssigned":true}
+#   AARTIQ_SANDBOX_RESULT:{"exitCode":n,"sandboxed":true,"sandboxPlatform":"win32",
+#     "jobAssigned":true,"appContainer":true,"restrictedToken":true,"integrityLevel":"low"}
 #   AARTIQ_SANDBOX_RESULT:{"error":"...","code":"SANDBOX_SETUP_FAILED","sandboxed":false,"rc":n}
 # The target's stdout/stderr are forwarded directly (inherited handles), so the
 # marker line is the only reliable way to separate result metadata from output.
@@ -79,7 +124,8 @@ public static class JobRunnerNative {
     public static extern bool TerminateJobObject(IntPtr hJob, uint uExitCode);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool CreateProcessW(
+    public static extern bool CreateProcessAsUserW(
+        IntPtr hToken,
         string lpApplicationName,
         StringBuilder lpCommandLine,
         IntPtr lpProcessAttributes,
@@ -106,6 +152,94 @@ public static class JobRunnerNative {
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr GetStdHandle(int nStdHandle);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetProcessHeap();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr HeapAlloc(IntPtr hHeap, uint dwFlags, UIntPtr dwBytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool HeapFree(IntPtr hHeap, uint dwFlags, IntPtr lpMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool InitializeProcThreadAttributeList(IntPtr lpAttributeList, uint dwAttributeCount, uint dwFlags, ref UIntPtr lpSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool UpdateProcThreadAttribute(IntPtr lpAttributeList, uint dwFlags, UIntPtr Attribute, IntPtr lpValue, IntPtr cbSize, IntPtr lpPreviousValue, IntPtr lpReturnSize);
+
+    // ---- Token isolation (restricted token + integrity level) ----
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool DuplicateTokenEx(
+        IntPtr hExistingToken,
+        uint dwDesiredAccess,
+        IntPtr lpTokenAttributes,
+        int ImpersonationLevel,
+        int TokenType,
+        out IntPtr phNewToken);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool CreateRestrictedToken(
+        IntPtr ExistingTokenHandle,
+        uint Flags,
+        uint DisableSidCount,
+        IntPtr SidsToDisable,
+        uint DeletePrivilegeCount,
+        IntPtr PrivilegesToDelete,
+        uint RestrictedSidCount,
+        IntPtr SidsToRestrict,
+        out IntPtr NewTokenHandle);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool SetTokenInformation(
+        IntPtr TokenHandle,
+        int TokenInformationClass,
+        IntPtr TokenInformation,
+        uint TokenInformationLength);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetTokenInformation(
+        IntPtr TokenHandle,
+        int TokenInformationClass,
+        IntPtr TokenInformation,
+        uint TokenInformationLength,
+        out uint ReturnLength);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool ConvertStringSidToSid(string StringSid, out IntPtr Sid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern IntPtr ConvertSidToStringSid(IntPtr Sid);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr LocalFree(IntPtr hMem);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out LUID lpLuid);
+
+    [DllImport("advapi32.dll")]
+    public static extern void FreeSid(IntPtr pSid);
+
+    // ---- AppContainer profile (userenv.dll; HRESULT-returning) ----
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int CreateAppContainerProfile(string pszAppContainerName, string pszDisplayName, string pszDescription, IntPtr pCapabilities, uint dwCapabilityCount, out IntPtr ppSid);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int DeriveAppContainerSidFromAppContainerName(string pszAppContainerName, out IntPtr ppsidAppContainerSid);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetAppContainerFolderPath(string pszAppContainerName, out IntPtr ppszPath);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int DeleteAppContainerProfile(string pszAppContainerName);
+
+    // ---- Token information class constants ----
+    public const int TokenPrivileges = 3;
+    public const int TokenIntegrityLevel = 25;
+    public const int TokenAppContainerSid = 29;
+
     // Job object info classes
     public const int JobObjectExtendedLimitInformation = 9;
 
@@ -126,11 +260,74 @@ public static class JobRunnerNative {
     public const uint CREATE_NO_WINDOW = 0x08000000;
     public const uint CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    public const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
+
+    // Proc-thread attribute identifiers (WinBase.h)
+    public const uint PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 9;
+
+    // Win32 base errors / HRESULTs
+    public const uint ERROR_INSUFFICIENT_BUFFER = 122;
+    public const uint ERROR_ALREADY_EXISTS = 183;
+
+    // Token access / duplicate settings
+    public const uint TOKEN_QUERY = 0x0008;
+    public const uint TOKEN_ASSIGN_PRIMARY = 0x0001;
+    public const uint TOKEN_DUPLICATE = 0x0002;
+    public const uint MAXIMUM_ALLOWED = 0x02000000;
+    public const uint DISABLE_MAX_PRIVILEGE = 0x1;
+
+    public const int SecurityImpersonation = 2;
+    public const int TokenPrimary = 1;
+
+    // Group/integrity attribute flags
+    public const uint SE_GROUP_INTEGRITY = 0x00000020;
+    public const uint SE_PRIVILEGE_REMOVED = 0x00000004;
 
     public const uint WAIT_TIMEOUT = 0x00000102;
     public const uint WAIT_FAILED = 0xFFFFFFFF;
 
+    // Privileges that are never needed by a sandboxed automation process. They
+    // are DELETED from the restricted token (not merely disabled) so the child
+    // can never enable them, even if a vulnerability rewrites the token.
+    // SeChangeNotifyPrivilege (traverse) is intentionally NOT in this list.
+    private static readonly string[] DELETED_PRIVILEGES = new string[] {
+        "SeDebugPrivilege",
+        "SeImpersonatePrivilege",
+        "SeAssignPrimaryTokenPrivilege",
+        "SeTcbPrivilege",
+        "SeCreateTokenPrivilege",
+        "SeLoadDriverPrivilege",
+        "SeBackupPrivilege",
+        "SeRestorePrivilege",
+        "SeTakeOwnershipPrivilege",
+        "SeIncreaseQuotaPrivilege",
+        "SeLockMemoryPrivilege",
+        "SeSystemProfilePrivilege",
+        "SeSystemtimePrivilege",
+        "SeProfileSingleProcessPrivilege",
+        "SeIncreaseBasePriorityPrivilege",
+        "SeCreatePagefilePrivilege",
+        "SeCreatePermanentPrivilege",
+        "SeManageVolumePrivilege",
+        "SeSecurityPrivilege",
+        "SeShutdownPrivilege",
+        "SeAuditPrivilege",
+        "SeUndockPrivilege",
+        "SeSyncAgentPrivilege",
+        "SeRelabelPrivilege",
+        "SeTrustedCredManAccessPrivilege",
+        "SeDelegateSessionUserImpersonatePrivilege",
+        "SeMachineAccountPrivilege",
+        "SeEnableDelegationPrivilege"
+    };
+
     [StructLayout(LayoutKind.Sequential)]
+    public struct LUID {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct STARTUPINFO {
         public uint cb;
         public string lpReserved;
@@ -150,6 +347,12 @@ public static class JobRunnerNative {
         public IntPtr hStdInput;
         public IntPtr hStdOutput;
         public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct STARTUPINFOEX {
+        public STARTUPINFO StartupInfo;
+        public IntPtr lpAttributeList;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -191,6 +394,31 @@ public static class JobRunnerNative {
         public IntPtr JobMemoryLimit;
         public IntPtr PeakProcessMemoryUsed;
         public IntPtr PeakJobMemoryUsed;
+    }
+
+    // TOKEN_MANDATORY_LABEL contains one SID_AND_ATTRIBUTES (the Low integrity
+    // SID with SE_GROUP_INTEGRITY). Structure is exactly one struct — a plain
+    // pointer + DWORD pair differs and would corrupt the SID_AND_ATTRIBUTES.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TOKEN_MANDATORY_LABEL {
+        public SID_AND_ATTRIBUTES Label;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SID_AND_ATTRIBUTES {
+        public IntPtr Sid;
+        public uint Attributes;
+    }
+
+    // SECURITY_CAPABILITIES for the AppContainer (winnt.h). CapabilityCount 0
+    // with Capabilities = NULL grants the container NO capabilities => no
+    // network access at all.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SECURITY_CAPABILITIES {
+        public IntPtr AppContainerSid;
+        public IntPtr Capabilities;
+        public uint CapabilityCount;
+        public uint Reserved;
     }
 
     // Quote a single argument for a Windows command line (inverse of
@@ -247,21 +475,125 @@ public static class JobRunnerNative {
             }
         }
         sb.Append('\0');
-        IntPtr ptr = Marshal.StringToHGlobalUni(sb.ToString());
-        return ptr;
+        return Marshal.StringToHGlobalUni(sb.ToString());
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetCurrentProcess();
+
+    // Get the current process token (TOKEN_QUERY | TOKEN_DUPLICATE). This is
+    // the seed for the restricted token.
+    public static IntPtr OpenCurrentProcessToken() {
+        IntPtr hProc = GetCurrentProcess();
+        IntPtr hToken;
+        if (!OpenProcessToken(hProc, TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY, out hToken)) {
+            return IntPtr.Zero;
+        }
+        return hToken;
+    }
+
+    // Create a primary, duplicate of the seed token (ImpersonationLevel=0,
+    // TokenType=Primary) so we never mutate the process's own token.
+    public static int CreatePrimaryCopy(IntPtr seed, out IntPtr primary) {
+        primary = IntPtr.Zero;
+        if (!DuplicateTokenEx(seed, MAXIMUM_ALLOWED, IntPtr.Zero, SecurityImpersonation,
+                TokenPrimary, out primary)) {
+            return Marshal.GetLastWin32Error();
+        }
+        return 0;
+    }
+
+    // Build a TOKEN_PRIVILEGES buffer whose entries are the LUIDs of the
+    // dangerous privileges listed in DELETED_PRIVILEGES. Privileges that do
+    // not exist on this system are skipped. Caller frees the returned buffer
+    // with Marshal.FreeHGlobal.
+    public static IntPtr BuildDeletePrivileges(out uint privilegeCount) {
+        List<LUID> luids = new List<LUID>();
+        foreach (string name in DELETED_PRIVILEGES) {
+            LUID luid;
+            if (LookupPrivilegeValue(null, name, out luid)) {
+                luids.Add(luid);
+            }
+        }
+        // TOKEN_PRIVILEGES = DWORD PrivilegeCount + LUID_AND_ATTRIBUTES[].
+        int per = Marshal.SizeOf(typeof(LUID)) + 4; // LUID + attributes DWORD
+        int size = 4 + per * luids.Count;
+        IntPtr buf = Marshal.AllocHGlobal(size);
+        Marshal.WriteInt32(buf, 0, luids.Count);
+        IntPtr cursor = new IntPtr(buf.ToInt64() + 4);
+        foreach (LUID luid in luids) {
+            Marshal.WriteInt32(cursor, (int)luid.LowPart);
+            Marshal.WriteInt32(new IntPtr(cursor.ToInt64() + 4), luid.HighPart);
+            Marshal.WriteInt32(new IntPtr(cursor.ToInt64() + 8), (int)SE_PRIVILEGE_REMOVED);
+            cursor = new IntPtr(cursor.ToInt64() + per);
+        }
+        privilegeCount = (uint)luids.Count;
+        return buf;
+    }
+
+    // Build a restricted token that has the dangerous privileges DELETED and
+    // carries the Low mandatory integrity label. Returns 0 on success.
+    public static int CreateRestrictedLowToken(IntPtr seed, out IntPtr restricted) {
+        restricted = IntPtr.Zero;
+        IntPtr lowSid = IntPtr.Zero;
+        if (!ConvertStringSidToSid("S-1-16-4096", out lowSid)) {  // S-1-16-4096 = Low
+            return Marshal.GetLastWin32Error();
+        }
+        try {
+            uint privCount = 0;
+            IntPtr privBuf = BuildDeletePrivileges(out privCount);
+            try {
+                // Flags = 0 (NOT DISABLE_MAX_PRIVILEGE: we delete the dangerous
+                // subset and keep SeChangeNotifyPrivilege so path traversal
+                // over the allowlisted directories still resolves).
+                if (!CreateRestrictedToken(seed, 0, 0, IntPtr.Zero, privCount, privBuf, 0, IntPtr.Zero, out restricted)) {
+                    return Marshal.GetLastWin32Error();
+                }
+            } finally {
+                Marshal.FreeHGlobal(privBuf);
+            }
+            // Set the Low mandatory integrity label (TokenIntegrityLevel).
+            TOKEN_MANDATORY_LABEL label = new TOKEN_MANDATORY_LABEL();
+            label.Label.Sid = lowSid;
+            label.Label.Attributes = SE_GROUP_INTEGRITY;
+            int size = Marshal.SizeOf(typeof(TOKEN_MANDATORY_LABEL));
+            IntPtr labelPtr = Marshal.AllocHGlobal(size);
+            try {
+                Marshal.StructureToPtr(label, labelPtr, false);
+                if (!SetTokenInformation(restricted, TokenIntegrityLevel, labelPtr, (uint)size)) {
+                    return Marshal.GetLastWin32Error();
+                }
+            } finally {
+                Marshal.FreeHGlobal(labelPtr);
+            }
+            return 0;
+        } finally {
+            // ConvertStringSidToSid returns LocalAlloc'd memory (LocalFree).
+            LocalFree(lowSid);
+        }
     }
 
     public static int Run(string exe, string[] args, Dictionary<string, string> env,
         string cwd, int maxProcesses, long maxMemoryBytes, int timeoutMs,
-        out uint exitCode, out string error) {
+        bool useAppContainer, IntPtr appContainerSid,
+        out uint exitCode, out string error, out bool jobAssigned, out bool appContainer, out string integrityLevel) {
         exitCode = 0;
         error = null;
+        jobAssigned = false;
+        appContainer = false;
+        integrityLevel = "none";
 
         IntPtr job = CreateJobObject(IntPtr.Zero, null);
         if (job == IntPtr.Zero) {
             error = "CreateJobObject failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
             return 1;
         }
+
+        IntPtr primaryToken = IntPtr.Zero;
+        IntPtr restrictedToken = IntPtr.Zero;
+        IntPtr envPtr = IntPtr.Zero;
+        IntPtr attrList = IntPtr.Zero;
+        IntPtr capsPtr = IntPtr.Zero;
 
         try {
             // Apply and verify limits BEFORE the target runs.
@@ -294,74 +626,170 @@ public static class JobRunnerNative {
                 return 2;
             }
 
-            IntPtr envPtr = BuildEnvBlock(env);
+            // ---- Token isolation ----
+            IntPtr seed = OpenCurrentProcessToken();
+            if (seed == IntPtr.Zero) {
+                error = "OpenProcessToken failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                return 3;
+            }
             try {
-                string cmdLine = BuildCommandLine(exe, args);
-                STARTUPINFO si = new STARTUPINFO();
-                si.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
-                // Forward the helper's standard handles so the target's
-                // stdout/stderr reach the Node pipe (not a hidden console).
-                si.dwFlags = STARTF_USESTDHANDLES;
-                si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-                si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-                si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-                PROCESS_INFORMATION pi;
-                if (!CreateProcessW(exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
-                        true, CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB,
-                        envPtr, cwd, ref si, out pi)) {
-                    error = "CreateProcessW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                int rc = CreatePrimaryCopy(seed, out primaryToken);
+                if (rc != 0) {
+                    error = "DuplicateTokenEx failed (0x" + rc.ToString("X8") + ")";
                     return 3;
                 }
-
-                try {
-                    // The process is suspended: assign it to the job and verify
-                    // before it can run a single instruction.
-                    if (!AssignProcessToJobObject(job, pi.hProcess)) {
-                        error = "AssignProcessToJobObject failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        TerminateProcess(pi.hProcess, 1);
-                        return 4;
+                IntPtr hToken = primaryToken;
+                if (useAppContainer) {
+                    // Restricted token: dangerous privileges deleted + Low IL.
+                    rc = CreateRestrictedLowToken(primaryToken, out restrictedToken);
+                    if (rc != 0) {
+                        error = "CreateRestrictedToken/SetTokenInformation failed (0x" + rc.ToString("X8") + ")";
+                        return 3;
                     }
-                    bool inJob = false;
-                    if (!IsProcessInJob(pi.hProcess, job, out inJob) || !inJob) {
-                        error = "Job assignment verification failed";
-                        TerminateProcess(pi.hProcess, 1);
-                        return 5;
-                    }
-
-                    // Resume the primary thread (previous suspend count = 1
-                    // because the process was created suspended). On failure
-                    // the return value is (DWORD)-1.
-                    uint resume = ResumeThread(pi.hThread);
-                    if (resume == uint.MaxValue) {
-                        error = "ResumeThread failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        TerminateProcess(pi.hProcess, 1);
-                        return 8;
-                    }
-
-                    uint waitMs = (timeoutMs > 0) ? (uint)timeoutMs : uint.MaxValue;
-                    uint wait = WaitForSingleObject(pi.hProcess, waitMs);
-                    if (wait == WAIT_TIMEOUT) {
-                        TerminateJobObject(job, 124);
-                        error = "TIMEOUT";
-                        return 124;
-                    }
-                    if (wait == WAIT_FAILED) {
-                        error = "WaitForSingleObject failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 6;
-                    }
-                    if (!GetExitCodeProcess(pi.hProcess, out exitCode)) {
-                        error = "GetExitCodeProcess failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 7;
-                    }
-                    return 0;
-                } finally {
-                    if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
-                    if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
+                    hToken = restrictedToken;
+                    integrityLevel = "low";
                 }
             } finally {
-                if (envPtr != IntPtr.Zero) Marshal.FreeHGlobal(envPtr);
+                if (seed != IntPtr.Zero) CloseHandle(seed);
+            }
+
+            envPtr = BuildEnvBlock(env);
+            string cmdLine = BuildCommandLine(exe, args);
+
+            STARTUPINFO baseSi = new STARTUPINFO();
+            baseSi.dwFlags = STARTF_USESTDHANDLES;
+            baseSi.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            baseSi.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+            baseSi.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+            PROCESS_INFORMATION pi;
+            uint flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB;
+            if (useAppContainer) {
+                try {
+                    // STARTUPINFOEX + PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
+                    // is the Microsoft-sanctioned way to create an AppContainer
+                    // process. The OS derives the AppContainer token from the
+                    // (restricted) token we pass. Zero capabilities -> zero
+                    // network, zero device, zero user-handle access.
+                    STARTUPINFOEX siex = new STARTUPINFOEX();
+                    siex.StartupInfo = baseSi;
+                    siex.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEX));
+                    siex.lpAttributeList = IntPtr.Zero;
+                    flags |= EXTENDED_STARTUPINFO_PRESENT;
+
+                    SECURITY_CAPABILITIES caps = new SECURITY_CAPABILITIES();
+                    caps.AppContainerSid = appContainerSid;
+                    caps.Capabilities = IntPtr.Zero;
+                    caps.CapabilityCount = 0;
+                    caps.Reserved = 0;
+
+                    // First call sizes the attribute list (returns FALSE with
+                    // ERROR_INSUFFICIENT_BUFFER).
+                    UIntPtr listSize = UIntPtr.Zero;
+                    InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref listSize);
+                    if (Marshal.GetLastWin32Error() != (int)ERROR_INSUFFICIENT_BUFFER) {
+                        error = "InitializeProcThreadAttributeList sizing failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 40;
+                    }
+                    attrList = HeapAlloc(GetProcessHeap(), 0, listSize);
+                    if (attrList == IntPtr.Zero) {
+                        error = "HeapAlloc(attribute list) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 41;
+                    }
+                    if (!InitializeProcThreadAttributeList(attrList, 1, 0, ref listSize)) {
+                        error = "InitializeProcThreadAttributeList failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 42;
+                    }
+                    capsPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
+                    Marshal.StructureToPtr(caps, capsPtr, false);
+                    if (!UpdateProcThreadAttribute(attrList, 0,
+                            (UIntPtr)PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                            capsPtr,
+                            (IntPtr)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)),
+                            IntPtr.Zero, IntPtr.Zero)) {
+                        error = "UpdateProcThreadAttribute failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 43;
+                    }
+                    siex.lpAttributeList = attrList;
+
+                    // bInheritHandles=true propagates our std handles. The
+                    // extension attribute list is what turns the new process
+                    // into an AppContainer at creation time — it can never run
+                    // a single instruction inside a different security context.
+                    if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
+                            true, flags, envPtr, cwd, ref siex.StartupInfo, out pi)) {
+                        error = "CreateProcessAsUserW (AppContainer) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 4;
+                    }
+                    appContainer = true;
+                } finally {
+                    if (capsPtr != IntPtr.Zero) Marshal.FreeHGlobal(capsPtr);
+                    if (attrList != IntPtr.Zero) HeapFree(GetProcessHeap(), 0, attrList);
+                    capsPtr = IntPtr.Zero;
+                    attrList = IntPtr.Zero;
+                }
+            } else {
+                baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
+                if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
+                        true, flags, envPtr, cwd, ref baseSi, out pi)) {
+                    error = "CreateProcessAsUserW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                    return 4;
+                }
+                appContainer = false;
+            }
+
+            try {
+                // The process is suspended: assign it to the job and verify
+                // before it can run a single instruction.
+                if (!AssignProcessToJobObject(job, pi.hProcess)) {
+                    error = "AssignProcessToJobObject failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                    TerminateProcess(pi.hProcess, 1);
+                    return 5;
+                }
+                bool inJob = false;
+                if (!IsProcessInJob(pi.hProcess, job, out inJob) || !inJob) {
+                    error = "Job assignment verification failed";
+                    TerminateProcess(pi.hProcess, 1);
+                    return 6;
+                }
+                jobAssigned = true;
+
+                // Resume the primary thread (previous suspend count = 1
+                // because the process was created suspended). On failure the
+                // return value is (DWORD)-1.
+                uint resume = ResumeThread(pi.hThread);
+                if (resume == uint.MaxValue) {
+                    error = "ResumeThread failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                    TerminateProcess(pi.hProcess, 1);
+                    return 7;
+                }
+
+                uint waitMs = (timeoutMs > 0) ? (uint)timeoutMs : uint.MaxValue;
+                uint wait = WaitForSingleObject(pi.hProcess, waitMs);
+                if (wait == WAIT_TIMEOUT) {
+                    TerminateJobObject(job, 124);
+                    error = "TIMEOUT";
+                    return 124;
+                }
+                if (wait == WAIT_FAILED) {
+                    error = "WaitForSingleObject failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                    return 8;
+                }
+                if (!GetExitCodeProcess(pi.hProcess, out exitCode)) {
+                    error = "GetExitCodeProcess failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                    return 9;
+                }
+                return 0;
+            } finally {
+                if (pi.hThread != IntPtr.Zero) CloseHandle(pi.hThread);
+                if (pi.hProcess != IntPtr.Zero) CloseHandle(pi.hProcess);
             }
         } finally {
+            if (envPtr != IntPtr.Zero) Marshal.FreeHGlobal(envPtr);
+            if (capsPtr != IntPtr.Zero) Marshal.FreeHGlobal(capsPtr);
+            if (attrList != IntPtr.Zero) HeapFree(GetProcessHeap(), 0, attrList);
+            if (restrictedToken != IntPtr.Zero && restrictedToken != primaryToken) CloseHandle(restrictedToken);
+            if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
             // Closing the last job handle triggers KILL_ON_JOB_CLOSE for any
             // process tree still inside the job (orphan cleanup).
             CloseHandle(job);
@@ -415,12 +843,215 @@ if ($maxMemoryBytes -lt 0) { $maxMemoryBytes = 0 }
 $timeoutMs = [int]$payload.timeoutMs
 if ($timeoutMs -lt 0) { $timeoutMs = 0 }
 
+# ---------------------------------------------------------------------------
+# Sandbox profile: AppContainer by default; fail closed if requested and
+# unreachable.
+# ---------------------------------------------------------------------------
+$useAppContainer = $true
+$integrityLevel = 'low'
+if ($payload.sandbox -ne $null) {
+  if ($payload.sandbox.useAppContainer -ne $null) {
+    $useAppContainer = [bool]$payload.sandbox.useAppContainer
+  }
+  if ($payload.sandbox.integrityLevel -ne $null) {
+    $integrityLevel = [string]$payload.sandbox.integrityLevel
+  }
+}
+if ($useAppContainer -and $integrityLevel -ne 'low') {
+  Write-Result @{ error = 'SANDBOX_POLICY_INVALID'; code = 'SANDBOX_SETUP_FAILED'; sandboxed = $false }
+  exit 1
+}
+
+# AppContainer name must be a valid Win32 container name. Randomized per run so
+# concurrent sandbox commands share no mutable state; the profile is deleted
+# again after the run.
+$containerName = 'Aartiq.AppContainer.' + ([System.Guid]::NewGuid().ToString('N'))
+
+$readDirs = @()
+$writeDirs = @()
+$ws = [string]$cwd
+if ($payload.sandbox -ne $null) {
+  if ($payload.sandbox.readDirs -ne $null) { $readDirs = @($payload.sandbox.readDirs) }
+  if ($payload.sandbox.writeDirs -ne $null) { $writeDirs = @($payload.sandbox.writeDirs) }
+  if ($payload.sandbox.workspace -ne $null) { $ws = [string]$payload.sandbox.workspace }
+}
+
+# ---------------------------------------------------------------------------
+# AppContainer profile + OS-ENFORCED directory allowlist.
+#
+# The allowlist is enforced by the kernel: an AppContainer principal can only
+# open an object whose DACL explicitly grants its package SID. We derive the
+# package SID by creating the profile, then grant that SID access ONLY to the
+# allowlisted directories, the workspace, the resolved executable, and (when it
+# lives outside system-standard roots) the executable's directory. Everything
+# else stays denied. The grants are removed after the run.
+# ---------------------------------------------------------------------------
+$script:acSidPtr = [IntPtr]::Zero
+$script:acSid = ''
+$script:grantedTargets = @()
+$script:icaclsPath = Join-Path $env:SystemRoot 'System32\icacls.exe'
+$script:acFolder = ''
+
+function Invoke-IntegrityGrant([string]$target, [string]$rights) {
+  $arg = "*$script:acSid`:$rights"
+  & $script:icaclsPath $target "/grant" $arg *> $null
+  return $global:LASTEXITCODE -eq 0
+}
+
+function Invoke-IntegrityRevoke([string]$target) {
+  & $script:icaclsPath $target "/remove:g" "*$script:acSid" "/t" "/c" *> $null
+  return $global:LASTEXITCODE -eq 0
+}
+
+# ---------------------------------------------------------------
+# Invoke-SandboxSetup — create the AppContainer profile, grant the package SID
+# (directory allowlist + workspace + executable), and reroute temp paths.
+# Returns $null on success or an error string on failure. On failure, nothing
+# else has run and the caller rolls back partial grants.
+# ---------------------------------------------------------------
+function Invoke-SandboxSetup {
+  if (-not $useAppContainer) { return $null }
+
+  # 1. Create the AppContainer profile (idempotent). Returns the package SID.
+  $hr = [JobRunnerNative]::CreateAppContainerProfile($containerName, 'Aartiq sandbox', 'Aartiq OS-level sandbox', [IntPtr]::Zero, 0, [ref]$script:acSidPtr)
+  if (($hr -eq 0x800700B7) -or ($hr -eq [JobRunnerNative]::ERROR_ALREADY_EXISTS)) {
+    $hr = [JobRunnerNative]::DeriveAppContainerSidFromAppContainerName($containerName, [ref]$script:acSidPtr)
+  }
+  if ($hr -ne 0) {
+    return ("CreateAppContainerProfile failed (0x{0:X8})" -f $hr)
+  }
+  if ($script:acSidPtr -eq [IntPtr]::Zero) {
+    return 'AppContainer profile created without a package SID'
+  }
+
+  # 2. Package SID as a string for the icacls grants.
+  $sidStrPtr = [JobRunnerNative]::ConvertSidToStringSid($script:acSidPtr)
+  if ($sidStrPtr -ne [IntPtr]::Zero) {
+    $script:acSid = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($sidStrPtr)
+    # ConvertSidToStringSid returns LocalAlloc'd memory.
+    [JobRunnerNative]::LocalFree($sidStrPtr)
+  }
+  if (-not $script:acSid) {
+    return 'AppContainer package SID string conversion failed'
+  }
+
+  # 3. AppContainer profile folder -> isolated TEMP/TMP/LOCALAPPDATA.
+  $folderPtr = [IntPtr]::Zero
+  $hr2 = [JobRunnerNative]::GetAppContainerFolderPath($containerName, [ref]$folderPtr)
+  if ($hr2 -eq 0 -and $folderPtr -ne [IntPtr]::Zero) {
+    $script:acFolder = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($folderPtr)
+    # GetAppContainerFolderPath returns CoTaskMemAlloc'd memory.
+    [System.Runtime.InteropServices.Marshal]::FreeCoTaskMem($folderPtr)
+  }
+  if (-not $script:acFolder) {
+    return 'GetAppContainerFolderPath failed'
+  }
+  New-Item -ItemType Directory -Force -Path (Join-Path $script:acFolder 'Temp') | Out-Null
+  $envDict['TEMP'] = Join-Path $script:acFolder 'Temp'
+  $envDict['TMP'] = Join-Path $script:acFolder 'Temp'
+  $envDict['LOCALAPPDATA'] = $script:acFolder
+
+  # 4. OS-enforced directory allowlist grants.
+  #    Required (fail closed if they fail): every writable path and the
+  #    workspace — without the package-SID ACE the target simply cannot write.
+  #    Workspace is always granted read-write.
+  if ($ws -and (Test-Path -LiteralPath $ws -PathType Container)) {
+    if (-not (Invoke-IntegrityGrant $ws '(OI)(CI)M')) {
+      return "Failed to grant workspace access for AppContainer: $ws"
+    }
+    $script:grantedTargets += ,$ws
+  }
+  foreach ($d in $writeDirs) {
+    if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue }
+    if (-not (Invoke-IntegrityGrant $d '(OI)(CI)M')) {
+      return "Failed to grant write access for AppContainer: $d"
+    }
+    $script:grantedTargets += ,$d
+  }
+  # Read-only allowlist entries: best-effort. A failed read grant merely
+  # keeps the path DENIED (the fail-closed direction); it never widens the
+  # allowlist. The target surfaces its own access error if it actually needs
+  # the path.
+  foreach ($d in $readDirs) {
+    if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue }
+    if (-not (Invoke-IntegrityGrant $d '(OI)(CI)RX')) {
+      [Console]::Error.WriteLine("WIN SANDBOX: could not grant read access to $d (package SID) — path will stay denied")
+    } else {
+      $script:grantedTargets += ,$d
+    }
+  }
+
+  # 5. Executable access. System-standard roots already carry the
+  #    ALL APPLICATION PACKAGES ACE; anything else (node in AppData, python
+  #    venvs, ...) needs the package SID so the AppContainer can launch it.
+  $exeDir = Split-Path -Parent $resolved
+  $standardRoots = @("$env:SystemRoot", "$env:ProgramFiles", "${env:ProgramFiles(x86)}")
+  $inStandardRoot = $false
+  foreach ($r in $standardRoots) {
+    if ($r -and $exeDir.StartsWith($r, [System.StringComparison]::OrdinalIgnoreCase)) { $inStandardRoot = $true; break }
+  }
+  if (-not $inStandardRoot) {
+    if (-not (Invoke-IntegrityGrant $exeDir '(OI)(CI)RX')) {
+      return "Failed to grant executable directory access for AppContainer: $exeDir"
+    }
+    $script:grantedTargets += ,$exeDir
+  }
+  if (-not (Invoke-IntegrityGrant $exe '(RX)')) {
+    return "Failed to grant executable access for AppContainer: $exe"
+  }
+  $script:grantedTargets += ,$exe
+
+  return $null
+}
+
+function Invoke-SandboxCleanup {
+  if (-not $useAppContainer) { return }
+  foreach ($t in $script:grantedTargets) {
+    try { Invoke-IntegrityRevoke $t | Out-Null } catch { }
+  }
+  try { [JobRunnerNative]::DeleteAppContainerProfile($containerName) | Out-Null } catch { }
+  if ($script:acFolder) { Remove-Item -LiteralPath $script:acFolder -Recurse -Force -ErrorAction SilentlyContinue }
+  if ($script:acSidPtr -ne [IntPtr]::Zero) {
+    [JobRunnerNative]::FreeSid($script:acSidPtr)
+    $script:acSidPtr = [IntPtr]::Zero
+  }
+}
+
+$setupError = Invoke-SandboxSetup
+
+if ($setupError) {
+  # Roll back any grants/profile created before the failure.
+  Invoke-SandboxCleanup
+  Write-Result @{ error = $setupError; code = 'SANDBOX_SETUP_FAILED'; sandboxed = $false }
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Execute.
+# ---------------------------------------------------------------------------
 $exitCode = [uint32]0
 $errorMsg = $null
-$rc = [JobRunnerNative]::Run($exe, [string[]]$argsArray, $envDict, $cwd, $maxProcesses, $maxMemoryBytes, $timeoutMs, [ref]$exitCode, [ref]$errorMsg)
+$jobAssigned = $false
+$appContainerApplied = $false
+$integrityApplied = 'none'
+try {
+  $rc = [JobRunnerNative]::Run($exe, [string[]]$argsArray, $envDict, $cwd, $maxProcesses, $maxMemoryBytes, $timeoutMs, $useAppContainer, $script:acSidPtr, [ref]$exitCode, [ref]$errorMsg, [ref]$jobAssigned, [ref]$appContainerApplied, [ref]$integrityApplied)
+} finally {
+  # Cleanup runs even when the target timed out or the helper was signalled:
+  # revoke ACL grants, delete the AppContainer profile, and remove its folder.
+  Invoke-SandboxCleanup
+}
 
 if ($rc -eq 0) {
-  Write-Result @{ exitCode = [int]$exitCode; sandboxed = $true; sandboxPlatform = 'win32'; jobAssigned = $true }
+  Write-Result @{
+    exitCode = [int]$exitCode
+    sandboxed = $true
+    sandboxPlatform = 'win32'
+    jobAssigned = $jobAssigned
+    appContainer = $appContainerApplied
+    restrictedToken = $useAppContainer
+    integrityLevel = $integrityApplied
+  }
 } else {
   $msg = $errorMsg
   if ($rc -eq 124) { $msg = 'TIMEOUT' }

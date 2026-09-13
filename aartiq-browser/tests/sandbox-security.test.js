@@ -270,18 +270,26 @@ describe('Linux bubblewrap (buildBubblewrapArgs / createLinuxSandbox)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Windows Job Object containment (fail-closed for unsupported policy)
+// Windows AppContainer sandbox (OS-level FS/network isolation, fail-closed)
 // ---------------------------------------------------------------------------
 
-describe('Windows Job Object containment', () => {
-  it('should fail closed when a network policy is requested (cannot enforce on Windows)', () => {
+describe('Windows AppContainer sandbox', () => {
+  it('should deny ALL network by default (empty allowlist is enforceable, zero capabilities)', () => {
+    // An empty networkAllowlist means "deny everything" — the AppContainer has
+    // ZERO capabilities, which the OS enforces. It must NOT throw.
+    const config = sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], { networkAllowlist: [] });
+    assert.ok(config, 'empty allowlist must produce a launch config');
+    if (config.cleanup) config.cleanup();
+  });
+
+  it('should fail closed on a non-empty network policy (per-domain allowlist unsupported)', () => {
     assert.throws(
-      () => sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], { networkAllowlist: [] }),
+      () => sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], { networkAllowlist: ['api.openai.com'] }),
       (err) => err.code === 'SANDBOX_UNAVAILABLE'
     );
   });
 
-  it('should reject a missing allowlist path even though Windows does not enforce FS at OS level', () => {
+  it('should reject a missing allowlist path (policy error, never silently ignored)', () => {
     assert.throws(
       () => sandbox.createWindowsSandbox('cmd.exe', ['/c', 'ver'], {
         directoryAllowlist: [{ path: '/nonexistent/x', access: 'read-write' }],
@@ -290,9 +298,10 @@ describe('Windows Job Object containment', () => {
     );
   });
 
-  it('should produce a win32 launch config (process containment, no OS-level FS/network claims)', () => {
+  it('should produce a win32 launch config (OS-level FS/network isolation via AppContainer)', () => {
     const config = sandbox.createWindowsSandbox('node', ['--version'], {});
     assert.strictEqual(config.platform, 'win32');
+    assert.deepStrictEqual(config.isolation, { filesystem: true, network: true, process: true });
     assert.ok(config.args.includes('-File'));
     assert.strictEqual(typeof config.cleanup, 'function');
     assert.strictEqual(typeof config.command, 'string');
@@ -320,12 +329,14 @@ describe('Windows Job Object containment', () => {
   });
 
   it('parseWindowsHelperOutput should decode success results and strip the marker', () => {
-    const out = 'hello world\nAARTIQ_SANDBOX_RESULT:{"exitCode":0,"sandboxed":true,"sandboxPlatform":"win32","jobAssigned":true}';
+    const out = 'hello world\nAARTIQ_SANDBOX_RESULT:{"exitCode":0,"sandboxed":true,"sandboxPlatform":"win32","jobAssigned":true,"appContainer":true,"restrictedToken":true,"integrityLevel":"low"}';
     const res = sandbox.parseWindowsHelperOutput(out, '');
     assert.strictEqual(res.success, true);
     assert.strictEqual(res.sandboxed, true);
     assert.strictEqual(res.sandboxPlatform, 'win32');
     assert.strictEqual(res.stdout, 'hello world');
+    assert.strictEqual(res.appContainer, true);
+    assert.strictEqual(res.integrityLevel, 'low');
   });
 
   it('parseWindowsHelperOutput should decode failures (fail closed)', () => {

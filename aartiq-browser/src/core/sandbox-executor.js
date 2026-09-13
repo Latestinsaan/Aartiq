@@ -19,12 +19,15 @@
  *   Linux  — bubblewrap (bwrap): namespaces (pid/net/ipc/uts), read-only
  *            system mounts, allowlisted bind mounts (read-only vs read-write),
  *            private /tmp, network disabled via --unshare-net.
- *   Windows — "Windows Job Object containment": the target process is created
- *            suspended and assigned to a Job Object (verified) whose handles
- *            live for the entire target lifetime. Windows does NOT provide
- *            OS-level filesystem or network isolation in this release; those
- *            are NOT claimed. Requests for per-process network policy on
- *            Windows fail closed.
+ *   Windows — AppContainer OS-level sandbox (Windows 8+): the target is
+ *            created SUSPENDED under a restricted token (dangerous privileges
+ *            deleted, Low integrity label) inside a verified Job Object, then
+ *            launched as an AppContainer via the SECURITY_CAPABILITIES
+ *            startup-info attribute list. The directory allowlist is enforced
+ *            at the OS layer by ACL grants on the AppContainer package SID
+ *            (icacls); anything not allowlisted stays DENIED. ZERO
+ *            capabilities => NO network access. Grants and the AppContainer
+ *            profile are removed after every run.
  *
  * RESULT CONTRACT
  * ---------------
@@ -33,7 +36,7 @@
  *   { filesystem: boolean, network: boolean, process: boolean }
  *   darwin : { true,  true,  true  }
  *   linux  : { true,  true,  true  }
- *   win32  : { false, false, true  }   (process-only — documented)
+ *   win32  : { true,  true,  true  }   (Job Object + AppContainer)
  *   failure/unsandboxed : { false, false, false }
  *
  * bubblewrap gets an extra capability pre-flight: `--version` succeeds even
@@ -96,12 +99,13 @@ const DEFAULT_MAX_PROCESSES = 64;
 
 // Explicit isolation capabilities reported on every result. "sandboxed" alone
 // is ambiguous across platforms; these fields state exactly what each platform
-// enforces at the OS layer so callers cannot mistake process containment for
-// filesystem/network isolation (see module header — Windows is process-only).
+// enforces at the OS layer so callers cannot mistake light containment for
+// filesystem/network isolation. Windows now enforces all three via the
+// AppContainer principal (ACL-scoped file access + zero capabilities + job).
 const NO_ISOLATION = { filesystem: false, network: false, process: false };
 const DARWIN_ISOLATION = { filesystem: true, network: true, process: true };
 const LINUX_ISOLATION = { filesystem: true, network: true, process: true };
-const WIN_ISOLATION = { filesystem: false, network: false, process: true };
+const WIN_ISOLATION = { filesystem: true, network: true, process: true };
 
 // ---------------------------------------------------------------------------
 // Structured failure
@@ -547,7 +551,7 @@ function createLinuxSandbox(command, args, options) {
 }
 
 // ---------------------------------------------------------------------------
-// Windows Job Object containment
+// Windows AppContainer sandbox
 // ---------------------------------------------------------------------------
 
 const WIN_JOB_RUNNER = path.join(__dirname, 'win-job-runner.ps1');
@@ -571,15 +575,25 @@ function resolveWindowsPowershellPath() {
 /**
  * Build the Windows sandboxed launch configuration.
  *
- * The target command is run by win-job-runner.ps1, which creates a Job Object,
- * applies + verifies limits, creates the target SUSPENDED, assigns it to the
- * job, verifies the assignment, resumes it, and holds the job handles for the
- * target's entire lifetime (KILL_ON_JOB_CLOSE).
+ * The target command is run by win-job-runner.ps1, which:
+ *   1. creates a Job Object and applies + verifies limits,
+ *   2. builds a restricted token (dangerous privileges DELETED, Low
+ *      integrity label) from the helper's own primary token,
+ *   3. creates an AppContainer profile, derives its package SID, and uses
+ *      icacls to grant that SID access ONLY to the allowlisted directories,
+ *      the workspace, and the resolved executable (OS-ENFORCED allowlist),
+ *   4. creates the target SUSPENDED as an AppContainer via the
+ *      SECURITY_CAPABILITIES startup-info attribute list (zero capabilities
+ *      => NO network), assigns it to the job, verifies the assignment,
+ *      resumes it, and holds the job handles for the target's lifetime
+ *      (KILL_ON_JOB_CLOSE),
+ *   5. removes the grants and deletes the AppContainer profile afterwards.
  *
- * Windows does NOT provide OS-level filesystem or network isolation in this
- * release. The directory allowlist is enforced at the application layer by
- * isPathAllowed() in directory-allowlist.js, not by the Job Object. Requesting
- * a per-process network policy (networkAllowlist !== undefined) fails closed.
+ * The directory allowlist is thus enforced at the OS layer by AppContainer
+ * ACLs — not merely at the application layer. A per-domain network allowlist
+ * is still unsupported (the AppContainer grants zero network), so passing a
+ * non-empty networkAllowlist fails closed. An empty/undefined allowlist means
+ * "deny all network", which AppContainer provides by default.
  *
  * @throws {SandboxError} on any failure — the caller must not execute.
  */
@@ -587,17 +601,19 @@ function createWindowsSandbox(command, args, options = {}) {
   const workspace = options.workspace || DEFAULT_WORKSPACE;
   const networkAllowlist = options.networkAllowlist;
 
-  if (networkAllowlist !== undefined) {
+  if (Array.isArray(networkAllowlist) && networkAllowlist.length > 0) {
     throw new SandboxError(
       'SANDBOX_UNAVAILABLE',
-      'Per-process network policy cannot be enforced on Windows in this release (requires AppContainer ' +
-      'or elevated WFP rules). Pass networkAllowlist:undefined to run under Job Object containment.'
+      'Per-domain network allowlisting is not supported by the Windows AppContainer sandbox ' +
+      '(zero capabilities => no network at all). Pass an empty allowlist to deny all network, ' +
+      'or useSandbox:false for unsandboxed execution.'
     );
   }
+  if (networkAllowlist !== undefined && !Array.isArray(networkAllowlist)) {
+    throw new SandboxError('SANDBOX_POLICY_INVALID', 'networkAllowlist must be an array');
+  }
 
-  // Even though Windows does not enforce the allowlist at the OS layer, invalid
-  // or missing paths are still a policy error — never silently ignored.
-  validateAllowlist(options.directoryAllowlist);
+  const { readDirs, writeDirs } = validateAllowlist(options.directoryAllowlist);
 
   const payload = {
     command,
@@ -607,6 +623,13 @@ function createWindowsSandbox(command, args, options = {}) {
     maxProcesses: options.maxProcesses || DEFAULT_MAX_PROCESSES,
     maxMemoryBytes: options.maxMemoryBytes || 0,
     timeoutMs: options.timeout || 30000,
+    sandbox: {
+      useAppContainer: true,
+      integrityLevel: 'low',
+      workspace,
+      readDirs,
+      writeDirs,
+    },
   };
 
   const runnerScript = getWindowsJobRunnerScript();
@@ -690,6 +713,9 @@ function parseWindowsHelperOutput(stdout, stderr) {
       sandboxed: true,
       sandboxPlatform: 'win32',
       jobAssigned: parsed.jobAssigned === true,
+      appContainer: parsed.appContainer === true,
+      restrictedToken: parsed.restrictedToken === true,
+      integrityLevel: parsed.integrityLevel || 'none',
       isolation: WIN_ISOLATION,
     };
   }
@@ -782,7 +808,8 @@ function ensureWorkspace(workspace) {
  * @param {string} [options.workspace] - sandbox workspace directory
  * @param {Array}  [options.directoryAllowlist] - allowlist entries
  * @param {string[]} [options.networkAllowlist] - domain allowlist; platform
- *   support is limited (see module header). Do not pass on Windows.
+ *   support is limited (see module header). Windows only supports the
+ *   deny-all form: pass an empty array or omit it entirely.
  * @param {object} [options.extraEnv] - extra allowlisted env vars
  * @param {number} [options.timeout] - timeout in ms
  * @param {number} [options.maxProcesses] - Windows job active-process limit

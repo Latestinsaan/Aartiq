@@ -1,6 +1,27 @@
 # Aartiq Browser - Recent Changes
 
-## Version 0.3.5 — Aartiq — For the questions that matter. (2026-07-23)
+## Version 0.4.0 — Windows AppContainer OS-Level Sandboxing (unreleased)
+
+### Security
+
+#### Windows OS-Level Sandboxing (AppContainer)
+- The Windows sandbox upgraded from Job-Object containment to a full **AppContainer** (Windows 8+), matching the OS-enforced guarantees already provided by Seatbelt (macOS) and bubblewrap (Linux).
+- The target runs under a **restricted token** (dangerous privileges DELETED, Low mandatory integrity label) created from the helper's own primary token, then launched as an **AppContainer** via the `SECURITY_CAPABILITIES` startup-info attribute list (the Microsoft LaunchAppContainer pattern). The OS builds the AppContainer token at creation time; the target never runs a single instruction uncontained.
+- **Directory allowlist enforced by the OS**: the target's package SID is granted ACL access ONLY to the allowlisted directories, the sandbox workspace, and the resolved executable (via `icacls`). Anything not allowlisted stays DENIED. Grants are revoked and the AppContainer profile deleted after every run.
+- **Network denied by the OS**: the AppContainer carries ZERO capabilities, so it cannot initiate network connections. High/critical-risk commands now get network isolation on Windows ("deny all" network policy).
+- **Isolated temp state**: `TEMP`/`TMP`/`LOCALAPPDATA` are rerouted into the per-run AppContainer profile folder (`GetAppContainerFolderPath`).
+- **Fail closed**: any step (profile creation, SID derivation, ACL grant, suspended start, job assignment verification) failing denies the command with `SANDBOX_SETUP_FAILED`; execution never falls back to an unsandboxed process.
+- `isolation` results now report `{ filesystem: true, network: true, process: true }` on win32; results also carry `appContainer`, `restrictedToken`, and `integrityLevel` fields.
+
+### Files Changed (Key)
+
+| File | Change |
+|------|--------|
+| `src/core/win-job-runner.ps1` | Rewritten: AppContainer profile, package-SID ACL grants, `CreateProcessAsUser` + `SECURITY_CAPABILITIES` attribute list, restricted Low-IL token, job verified-assignment |
+| `src/core/sandbox-executor.js` | `WIN_ISOLATION` now full; stages an AppContainer `sandbox` payload; empty `networkAllowlist` = enforced deny-all |
+| `src/main/handlers/utils.js` | High/critical commands request "deny all network" on every platform incl. Windows |
+| `tests/windows-job-sandbox.test.js` | AppContainer invariants + OS-allowlist runtime tests |
+| `tests/sandbox-security.test.js` | Windows isolation contract updated |
 
 ### Overview
 A major release focused on security hardening, DOM automation reliability, native OS verification, and AI skill management. Replaces PowerShell-based biometrics with native WebAuthn/FIDO2, introduces a directory allowlist for AI file access, upgrades the DOM engine to v2 with cascading fallbacks, and adds deep research with execution tracking.
