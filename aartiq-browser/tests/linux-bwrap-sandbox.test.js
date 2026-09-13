@@ -114,7 +114,21 @@ describe('Linux bubblewrap — JS contract & fail-closed (any platform)', () => 
 
 const bwrapProbe = spawnSync('bwrap', ['--version'], { encoding: 'utf8', timeout: 5000 });
 const bwrapAvailable = !bwrapProbe.error && bwrapProbe.status === 0;
-const canRunLinux = process.platform === 'linux' && bwrapAvailable;
+
+// bwrap present does NOT mean namespaces can be created: GitHub-hosted Ubuntu
+// runners and hardened hosts block unprivileged user namespaces. Gate the
+// runtime suite on the same real capability probe the sandbox uses, so those
+// environments report an honest SKIP rather than a misleading failure.
+function bwrapCanCreateNamespaces() {
+  const r = spawnSync(
+    'bwrap',
+    ['--unshare-pid', '--unshare-net', '--unshare-ipc', '--unshare-uts', '--unshare-user', '--unshare-cgroup', '--new-session', '/bin/true'],
+    { encoding: 'utf8', timeout: 10000 }
+  );
+  return !r.error && r.status === 0;
+}
+
+const canRunLinux = process.platform === 'linux' && bwrapAvailable && bwrapCanCreateNamespaces();
 const hasPython = canRunLinux && (fs.existsSync('/usr/bin/python3') || fs.existsSync('/usr/bin/python'));
 const pyBin = hasPython ? (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : '/usr/bin/python') : null;
 

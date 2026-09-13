@@ -54,6 +54,11 @@ describe('createFailure / SandboxError', () => {
 // ---------------------------------------------------------------------------
 
 describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', () => {
+  // Fake-sandbox-exec tests spawn POSIX shell scripts; profile-write tests
+  // need a real /usr/bin/sandbox-exec. Gate by platform so non-POSIX CI
+  // runners report an honest SKIP instead of a misleading failure.
+  const posixIt = process.platform === 'win32' ? it.skip : it;
+  const darwinIt = process.platform === 'darwin' ? it : it.skip;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-security-'));
   const ws = path.join(tmpDir, 'workspace');
   const rwDir = path.join(tmpDir, 'rw');
@@ -122,7 +127,7 @@ describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', (
     assert.strictEqual(result.code, 'SANDBOX_UNAVAILABLE');
   });
 
-  it('should report SANDBOX_POLICY_INVALID when the profile fails to compile (fail closed)', () => {
+  posixIt('should report SANDBOX_POLICY_INVALID when the profile fails to compile (fail closed)', () => {
     // Fake sandbox-exec that always rejects the profile.
     const fakeSandboxExec = path.join(tmpDir, 'fake-sandbox-exec');
     fs.writeFileSync(fakeSandboxExec, '#!/bin/sh\necho "profile rejected" >&2\nexit 1\n');
@@ -135,7 +140,7 @@ describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', (
     assert.strictEqual(result.code, 'SANDBOX_POLICY_INVALID');
   });
 
-  it('should accept a profile when the pre-flight check passes', () => {
+  posixIt('should accept a profile when the pre-flight check passes', () => {
     const fakeSandboxExec = path.join(tmpDir, 'fake-sandbox-exec-ok');
     fs.writeFileSync(fakeSandboxExec, '#!/bin/sh\nexit 0\n');
     fs.chmodSync(fakeSandboxExec, 0o755);
@@ -153,7 +158,7 @@ describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', (
     );
   });
 
-  it('createDarwinSandbox should fail closed when the profile validation rejects', () => {
+  posixIt('createDarwinSandbox should fail closed when the profile validation rejects', () => {
     const fakeSandboxExec = path.join(tmpDir, 'fake-sandbox-exec-reject');
     fs.writeFileSync(fakeSandboxExec, '#!/bin/sh\necho "bad" >&2\nexit 1\n');
     fs.chmodSync(fakeSandboxExec, 0o755);
@@ -166,7 +171,7 @@ describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', (
     );
   });
 
-  it('createDarwinSandbox should fail closed when the Seatbelt profile write fails', () => {
+  darwinIt('createDarwinSandbox should fail closed when the Seatbelt profile write fails', () => {
     const origWrite = fs.writeFileSync;
     fs.writeFileSync = (p, ...rest) => {
       if (String(p).endsWith('.sb')) {
@@ -577,7 +582,12 @@ describe('useSandbox:false explicit escape hatch', () => {
 // Real Seatbelt integration (macOS only)
 // ---------------------------------------------------------------------------
 
-describe('Seatbelt integration (macOS only)', () => {
+// Seatbelt runtime suites only make sense on macOS; on other platforms report
+// them as SKIPped (describe.skip) so CI on Windows/Linux stays green without
+// running, or pretending to run, macOS enforcement.
+const seatbeltRuntime = process.platform === 'darwin' ? describe : describe.skip;
+
+seatbeltRuntime('Seatbelt integration (macOS only)', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-security-'));
   const ws = path.join(tmpDir, 'workspace');
   // Deliberately OUTSIDE the temp/workspace allowance — the Seatbelt profile
@@ -629,7 +639,7 @@ describe('Seatbelt integration (macOS only)', () => {
 // are the "throw pathological inputs / try to disprove the claim" tests.
 // ---------------------------------------------------------------------------
 
-describe('Seatbelt adversarial enforcement (macOS only)', () => {
+seatbeltRuntime('Seatbelt adversarial enforcement (macOS only)', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-adversarial-'));
   const ws = path.join(tmpDir, 'workspace');
   fs.mkdirSync(ws, { recursive: true });
