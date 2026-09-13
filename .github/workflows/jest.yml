@@ -94,7 +94,10 @@ jobs:
         run: |
           $pattern = "${{ inputs.windows-test-pattern }}"
           if ($pattern -eq '') { $pattern = 'tests/sandbox-security.test.js tests/windows-job-sandbox.test.js tests/linux-bwrap-sandbox.test.js' }
-          npx jest $pattern --ci --runInBand
+          # pwsh passes a scalar string to native exes as ONE argument; split
+          # into an array so each test path reaches jest as its own arg.
+          $patternArr = @($pattern -split ' ' | Where-Object { $_ -ne '' })
+          npx jest $patternArr --ci --runInBand
 
   # macOS runtime verification. GitHub's macos runners ship /usr/bin/sandbox-exec
   # and python3, so the Seatbelt adversarial suite (file allowlist, IP + AF_UNIX
