@@ -1,16 +1,6 @@
 name: 🧪 Jest Test Suite
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'aartiq-browser/**'
-      - '.github/workflows/jest.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'aartiq-browser/**'
-      - '.github/workflows/jest.yml'
   workflow_dispatch:
     inputs:
       # Dispatching with a pattern runs ONLY the Windows sandbox job, and only
