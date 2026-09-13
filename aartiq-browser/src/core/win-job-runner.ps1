@@ -1013,11 +1013,11 @@ function Invoke-SandboxSetup {
       return "Failed to grant executable directory access for AppContainer: $exeDir"
     }
     $script:grantedTargets += ,$exeDir
+    if (-not (Invoke-IntegrityGrant $exe '(RX)')) {
+      return "Failed to grant executable access for AppContainer: $exe"
+    }
+    $script:grantedTargets += ,$exe
   }
-  if (-not (Invoke-IntegrityGrant $exe '(RX)')) {
-    return "Failed to grant executable access for AppContainer: $exe"
-  }
-  $script:grantedTargets += ,$exe
 
   return $null
 }
