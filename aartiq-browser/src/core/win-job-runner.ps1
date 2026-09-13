@@ -92,7 +92,8 @@ function Write-Result([object]$obj) {
 }
 
 try {
-  $payload = Get-Content -Raw -LiteralPath $PayloadPath | ConvertFrom-Json
+  # Read as UTF-8 explicitly: the payload is staged BOM-less by the Node side.
+  $payload = Get-Content -Raw -Encoding UTF8 -LiteralPath $PayloadPath | ConvertFrom-Json
 } catch {
   Write-Result @{ error = 'SANDBOX_SETUP_FAILED'; sandboxed = $false }
   exit 1
