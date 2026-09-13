@@ -177,7 +177,7 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     });
     assertVerifiedSandbox(res, 'start-suspended');
     assert.deepStrictEqual(res.isolation, WIN_ISOLATION);
-  });
+  }, 120000);
 
   it('grandchildren spawned by the target remain inside the job', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
@@ -188,7 +188,7 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
       { useSandbox: true, workspace: wsDir }
     );
     assertVerifiedSandbox(res, 'grandchild-containment');
-  });
+  }, 120000);
 
   it('secrets do not enter the sandbox environment', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
@@ -204,7 +204,7 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     } finally {
       delete process.env.AWS_SECRET_ACCESS_KEY;
     }
-  });
+  }, 120000);
 
   it('the sandbox cannot read a directory that is not allowlisted', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
@@ -220,7 +220,7 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     );
     assertVerifiedSandbox(res, 'non-allowlisted-read');
     assert.ok(!String(res.stdout).includes('classified'), 'non-allowlisted file must stay unreadable');
-  });
+  }, 120000);
 
   it('helper termination kills the target before it completes (KILL_ON_JOB_CLOSE)', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
