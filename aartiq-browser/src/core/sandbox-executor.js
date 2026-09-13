@@ -638,8 +638,9 @@ function resolveWindowsPowershellPath() {
  *
  * The target command is run by win-job-runner.ps1, which:
  *   1. creates a Job Object and applies + verifies limits,
- *   2. builds a restricted token (dangerous privileges DELETED, Low
- *      integrity label) from the helper's own primary token,
+ *   2. (useAppContainer:false fallback only) builds a restricted token from
+ *      the helper's own primary token — dangerous privileges DELETED, Low
+ *      integrity label — and runs the target via CreateProcessAsUserW,
  *   3. creates an AppContainer profile, derives its package SID, and uses
  *      icacls to grant that SID access ONLY to the allowlisted directories,
  *      the workspace, and the resolved executable (OS-ENFORCED allowlist),

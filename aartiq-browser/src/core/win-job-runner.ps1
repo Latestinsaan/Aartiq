@@ -11,24 +11,16 @@
 #    the whole process tree is terminated if this helper exits.
 # 3. When `sandbox.useAppContainer` is true (the default), the target runs
 #    under an APP CONTAINER (a Windows 8+ OS-enforced isolation principal):
-#      - Restricted token: dangerous privileges are DELETED from the token
-#        (SeDebug, SeImpersonate, SeLoadDriver, SeRestore, ...). The process
-#        cannot enable any of them no matter what it runs. SeChangeNotify
-#        (traverse) is retained so legitimate paths still resolve.
-#      - Low mandatory integrity level (S-1-16-4096): the process cannot
-#        write to medium/high integrity objects. This is OS-ENFORCED - the
-#        process kernel token carries the label, it is not an application
-#        convention.
-#      - AppContainer principal (SECURITY_CAPABILITIES + StartupInfoEx
-#        attribute list, the Microsoft LaunchAppContainer pattern): the OS
-#        builds an AppContainer token from our restricted token. Filesystem,
-#        registry, window, device and network isolation are enforced by the
-#        kernel via the AppContainer SID. The container ships with ZERO
-#        capabilities, so it CANNOT initiate network traffic (no
-#        internetClient / anyNetwork). Read/write is permitted ONLY to paths
-#        whose ACL explicitly grants the package SID - the allowlisted
-#        directories, the sandbox workspace, and the AppContainer profile
-#        folder (LOCALAPPDATA/TEMP rerouted by the OS).
+#      - The target is created with the SECURITY_CAPABILITIES proc-thread
+#        attribute via CreateProcessW (the Microsoft LaunchAppContainer
+#        pattern). CreateProcessAsUserW does NOT support this attribute, so
+#        the AppContainer target is launched with the helper's own token and
+#        the kernel builds the container token at process start.
+#      - The container ships with ZERO capabilities, so it CANNOT initiate
+#        network traffic (no internetClient / anyNetwork). Read/write is
+#        permitted ONLY to paths whose ACL explicitly grants the package SID -
+#        the allowlisted directories, the sandbox workspace, and the
+#        AppContainer profile folder (LOCALAPPDATA/TEMP rerouted by the OS).
 #      - Directory allowlist is OS-ENFORCED: before the target is launched,
 #        this helper grants the derived package SID read(+execute) access to
 #        every allowlisted read directory and read+write+execute (modify) to
@@ -37,21 +29,24 @@
 #      - Grants and the profile are best-effort removed after the run so no
 #        persistent ACL residue or orphan profile survives on the user's
 #        machine.
+# 3b. The LOW-INTEGRITY RESTRICTED TOKEN path is the `useAppContainer:false`
+#     fallback: dangerous privileges (SeDebug, SeImpersonate, SeLoadDriver,
+#     SeRestore, ...) are DELETED from a duplicate of the helper's token and
+#     the Low mandatory integrity label (S-1-16-4096) is applied via
+#     SetTokenInformation(TokenIntegrityLevel). The target then runs via
+#     CreateProcessAsUserW. An AppContainer process relies on the kernel-built
+#     container token restrictions instead of a crafted Low-IL token.
 # 4. Every setup step failure returns a structured error and exits non-zero;
 #    the target is never allowed to run uncontained. If `useAppContainer`
 #    cannot be satisfied (old OS, API failure, grant failure on a writable
 #    path), the runner FAILS CLOSED - it never silently degrades to a
 #    less-isolated profile.
 # 5. The verification loop runs after setup: Job Object membership is
-#    re-checked before the target resumes. (The AppContainer SID and Low
-#    integrity label are carried by the kernel token at creation.)
+#    re-checked before the target resumes.
 #
 # Reference: this mirrors Microsoft's LaunchAppContainer sample
 # (microsoft/SandboxSecurityTools) and the "Launch an AppContainer" and
-# "Processes in the Client Security Context" documentation. CreateProcessAsUser
-# does not require SE_ASSIGNPRIMARYTOKEN/SE_INCREASE_QUOTA because the token
-# passed to it is created via CreateRestrictedToken from the caller's own
-# primary token.
+# "Processes in the Client Security Context" documentation.
 #
 # Usage: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass `
 #          -File win-job-runner.ps1 <payload.json>
@@ -78,6 +73,9 @@
 # JSON result object:
 #   AARTIQ_SANDBOX_RESULT:{"exitCode":n,"sandboxed":true,"sandboxPlatform":"win32",
 #     "jobAssigned":true,"appContainer":true,"restrictedToken":true,"integrityLevel":"low"}
+#   (AppContainer runs report integrityLevel "none": the kernel-built container
+#   token carries the isolation; the Low-IL label is applied only on the
+#   useAppContainer:false restricted-token path.)
 #   AARTIQ_SANDBOX_RESULT:{"error":"...","code":"SANDBOX_SETUP_FAILED","sandboxed":false,"rc":n}
 # The target's stdout/stderr are forwarded directly (inherited handles), so the
 # marker line is the only reliable way to separate result metadata from output.
@@ -168,6 +166,22 @@ public static class JobRunnerNative {
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool UpdateProcThreadAttribute(IntPtr lpAttributeList, uint dwFlags, UIntPtr Attribute, IntPtr lpValue, IntPtr cbSize, IntPtr lpPreviousValue, IntPtr lpReturnSize);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DeleteProcThreadAttributeList(IntPtr lpAttributeList);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CreateProcessW(
+        string lpApplicationName,
+        StringBuilder lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        uint dwCreationFlags,
+        IntPtr lpEnvironment,
+        string lpCurrentDirectory,
+        IntPtr lpStartupInfo,
+        out PROCESS_INFORMATION lpProcessInformation);
+
     // ---- Token isolation (restricted token + integrity level) ----
     [DllImport("advapi32.dll", SetLastError = true)]
     public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
@@ -236,21 +250,6 @@ public static class JobRunnerNative {
     [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern int DeleteAppContainerProfile(string pszAppContainerName);
 
-    // kernelbase.CreateLowBoxToken is the actual export that builds an
-    // AppContainer token from a profile SID (CreateAppContainerToken is NOT an
-    // entry point in userenv.dll). Zero capabilities + an integrity-level SID
-    // (Low) are applied in the one call.
-    [DllImport("kernelbase.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern IntPtr CreateLowBoxToken(
-        IntPtr ExistingTokenHandle,
-        uint DesiredAccess,
-        IntPtr AppContainerSid,
-        IntPtr Capabilities,
-        uint CapabilityCount,
-        IntPtr HandleList,
-        uint HandleCount,
-        IntPtr IntegrityLevelSid);
-
     // ---- Token information class constants ----
     public const int TokenPrivileges = 3;
     public const int TokenIntegrityLevel = 25;
@@ -278,8 +277,9 @@ public static class JobRunnerNative {
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
     public const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
 
-    // Proc-thread attribute identifiers (WinBase.h)
-    public const uint PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 9;
+    // Proc-thread attribute identifiers (WinBase.h: attribute value encodes the
+    // variable-segment count in the low 16 bits).
+    public const uint PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009;
 
     // Win32 base errors / HRESULTs
     public const uint ERROR_INSUFFICIENT_BUFFER = 122;
@@ -589,28 +589,6 @@ public static class JobRunnerNative {
         }
     }
 
-    // Create the AppContainer token from the profile SID via kernelbase
-    // CreateLowBoxToken (zero capabilities => deny-all network/device/user-handle
-    // access, Low integrity stamp in the same call). Returns 0 on success,
-    // otherwise the Win32 error.
-    public static int CreateAppContainerLowToken(IntPtr seed, IntPtr acSid, out IntPtr token) {
-        token = IntPtr.Zero;
-        IntPtr lowSid = IntPtr.Zero;
-        if (!ConvertStringSidToSid("S-1-16-4096", out lowSid)) {  // S-1-16-4096 = Low
-            return Marshal.GetLastWin32Error();
-        }
-        try {
-            token = CreateLowBoxToken(seed, (uint)MAXIMUM_ALLOWED, acSid, IntPtr.Zero, 0, IntPtr.Zero, 0, lowSid);
-            if (token == IntPtr.Zero) {
-                return Marshal.GetLastWin32Error();
-            }
-            return 0;
-        } finally {
-            // ConvertStringSidToSid returns LocalAlloc'd memory (LocalFree).
-            LocalFree(lowSid);
-        }
-    }
-
     public static int Run(string exe, string[] args, Dictionary<string, string> env,
         string cwd, int maxProcesses, long maxMemoryBytes, int timeoutMs,
         bool useAppContainer, IntPtr appContainerSid,
@@ -676,21 +654,21 @@ public static class JobRunnerNative {
                     return 3;
                 }
                 hToken = primaryToken;
-                if (useAppContainer) {
-                    // AppContainer token created from the profile SID with
-                    // zero capabilities (deny-all network/devices/user
-                    // handles) + Low integrity, in one CreateLowBoxToken call.
-                    // The app container property lives on the token itself, so
-                    // CreateProcessAsUserW can spawn it with a plain
-                    // STARTUPINFO.
-                    int acrc = CreateAppContainerLowToken(primaryToken, appContainerSid, out restrictedToken);
-                    if (acrc != 0) {
-                        error = "CreateLowBoxToken failed (0x" + acrc.ToString("X8") + ")";
+                if (!useAppContainer) {
+                    // Non-AppContainer: restricted token (dangerous privileges
+                    // deleted) + Low mandatory integrity via CreateProcessAsUserW.
+                    rc = CreateRestrictedLowToken(primaryToken, out restrictedToken);
+                    if (rc != 0) {
+                        error = "CreateRestrictedToken/SetTokenInformation failed (0x" + rc.ToString("X8") + ")";
                         return 3;
                     }
                     hToken = restrictedToken;
                     integrityLevel = "low";
                 }
+                // AppContainer path: the kernel builds the container token at
+                // process start from the SECURITY_CAPABILITIES proc-thread
+                // attribute (CreateProcessW). The non-exported token-stamping
+                // APIs are not required for this design.
             } finally {
                 if (seed != IntPtr.Zero) CloseHandle(seed);
             }
@@ -698,28 +676,89 @@ public static class JobRunnerNative {
             envPtr = BuildEnvBlock(env);
             string cmdLine = BuildCommandLine(exe, args);
 
-            STARTUPINFO baseSi = new STARTUPINFO();
-            baseSi.dwFlags = STARTF_USESTDHANDLES;
-            baseSi.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-            baseSi.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-            baseSi.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-
             PROCESS_INFORMATION pi;
             uint flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB;
 
-            // The AppContainer property is already embedded in restrictedToken
-            // (CreateAppContainerLowToken). CreateProcessAsUserW uses the
-            // plain STARTUPINFO without EXTENDED_STARTUPINFO_PRESENT.
-            baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
             if (useAppContainer) {
-                appContainer = true;
-            }
+                // AppContainer via the SECURITY_CAPABILITIES proc-thread
+                // attribute list passed to CreateProcessW (kernel32).
+                // CreateProcessAsUserW does NOT support this attribute
+                // (ERROR_NOT_SUPPORTED); the documented lowbox pattern is
+                // CreateProcessW with the current process token. The kernel
+                // builds the container token at process start: with
+                // CapabilityCount 0 the container gets ZERO capabilities —
+                // no network, no device, no user-handle access — from the very
+                // first instruction. The profile SID (/ package SID ACL
+                // grants) provides the filesystem isolation.
+                UIntPtr attrSize = UIntPtr.Zero;
+                InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attrSize);
+                IntPtr attrList = Marshal.AllocHGlobal(attrSize);
+                try {
+                    if (!InitializeProcThreadAttributeList(attrList, 1, 0, ref attrSize)) {
+                        error = "InitializeProcThreadAttributeList failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 4;
+                    }
+                    SECURITY_CAPABILITIES caps = new SECURITY_CAPABILITIES();
+                    caps.AppContainerSid = appContainerSid;
+                    caps.Capabilities = IntPtr.Zero;
+                    caps.CapabilityCount = 0;
+                    caps.Reserved = 0;
+                    IntPtr capsPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
+                    try {
+                        Marshal.StructureToPtr(caps, capsPtr, false);
+                    } catch {
+                        error = "Failed to marshal SECURITY_CAPABILITIES";
+                        return 4;
+                    }
+                    if (!UpdateProcThreadAttribute(attrList, 0, (UIntPtr)PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, capsPtr,
+                            (IntPtr)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)), IntPtr.Zero, IntPtr.Zero)) {
+                        Marshal.FreeHGlobal(capsPtr);
+                        error = "UpdateProcThreadAttribute failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 4;
+                    }
+                    Marshal.FreeHGlobal(capsPtr);
 
-            // bInheritHandles=true propagates our std handles.
-            if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
-                    true, flags, envPtr, cwd, ref baseSi, out pi)) {
-                error = "CreateProcessAsUserW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                return 4;
+                    STARTUPINFOEX siex = new STARTUPINFOEX();
+                    siex.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+                    siex.StartupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+                    siex.StartupInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+                    siex.StartupInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+                    siex.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEX));
+                    siex.lpAttributeList = attrList;
+
+                    IntPtr siexPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(STARTUPINFOEX)));
+                    try {
+                        Marshal.StructureToPtr(siex, siexPtr, false);
+                    } catch {
+                        error = "Failed to marshal STARTUPINFOEX";
+                        return 4;
+                    }
+                    // bInheritHandles=true propagates our std handles.
+                    if (!CreateProcessW(null, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
+                            true, flags | EXTENDED_STARTUPINFO_PRESENT, envPtr, cwd, siexPtr, out pi)) {
+                        Marshal.FreeHGlobal(siexPtr);
+                        error = "CreateProcessW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                        return 4;
+                    }
+                    appContainer = true;
+                    Marshal.FreeHGlobal(siexPtr);
+                } finally {
+                    DeleteProcThreadAttributeList(attrList);
+                    Marshal.FreeHGlobal(attrList);
+                }
+            } else {
+                STARTUPINFO baseSi = new STARTUPINFO();
+                baseSi.dwFlags = STARTF_USESTDHANDLES;
+                baseSi.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+                baseSi.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+                baseSi.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+                baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
+                // bInheritHandles=true propagates our std handles.
+                if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
+                        true, flags, envPtr, cwd, ref baseSi, out pi)) {
+                    error = "CreateProcessAsUserW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                    return 4;
+                }
             }
 
             try {

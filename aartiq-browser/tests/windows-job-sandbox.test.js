@@ -78,15 +78,23 @@ it('encodes the AppContainer + restricted-token + verified-assignment invariants
       assert.ok(/DeriveAppContainerSidFromAppContainerName/.test(runner), 'must derive the package SID when the profile exists');
       assert.ok(/GetAppContainerFolderPath/.test(runner), 'must isolate TEMP/LOCALAPPDATA into the AC profile folder');
       assert.ok(/DeleteAppContainerProfile/.test(runner), 'must delete the AC profile after the run');
-      // The target is made an AppContainer via the token: kernelbase
-      // CreateLowBoxToken builds the container token from the profile SID with
-      // zero capabilities + Low integrity. The SECURITY_CAPABILITIES
-      // startup-info attribute list is NOT supported by CreateProcessAsUserW,
-      // so no attribute-list plumbing is used.
-      assert.ok(/CreateLowBoxToken/.test(runner), 'must build the AppContainer token via kernelbase.CreateLowBoxToken');
-      assert.ok(!/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/.test(runner), 'must NOT use the SECURITY_CAPABILITIES attribute list');
-      assert.ok(!/EXTENDED_STARTUPINFO_PRESENT/.test(runner), 'must not need EXTENDED_STARTUPINFO_PRESENT');
-      assert.ok(!/InitializeProcThreadAttributeList/.test(runner), 'must not initialize a proc-thread attribute list');
+      // The target is made an AppContainer at process creation via the
+      // SECURITY_CAPABILITIES proc-thread attribute on CreateProcessW
+      // (LaunchAppContainer pattern). CreateProcessAsUserW does not support
+      // this attribute (ERROR_NOT_SUPPORTED), so the AC target is launched
+      // with CreateProcessW. Zero capability count => the kernel-built
+      // container token has no network / device / user-handle access.
+      assert.ok(/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/.test(runner), 'must attach SECURITY_CAPABILITIES to the attribute list');
+      assert.ok(/SECURITY_CAPABILITIES\b/.test(runner), 'must define/stamp the SECURITY_CAPABILITIES structure');
+      assert.ok(/CreateProcessW\b/.test(runner), 'must launch the AC target via CreateProcessW');
+      assert.ok(/EXTENDED_STARTUPINFO_PRESENT/.test(runner), 'must set EXTENDED_STARTUPINFO_PRESENT');
+      assert.ok(/InitializeProcThreadAttributeList/.test(runner), 'must size/initialize the attribute list');
+      assert.ok(/UpdateProcThreadAttribute/.test(runner), 'must attach the attribute before creating the process');
+      // Token-stamping is not used: CreateLowBoxToken / CreateAppContainerToken
+      // are not name-exported, so the kernel builds the container token from
+      // the attribute list instead.
+      assert.ok(!/CreateLowBoxToken/.test(runner), 'must NOT resolve CreateLowBoxToken');
+      assert.ok(!/CreateAppContainerToken/.test(runner), 'must NOT call CreateAppContainerToken');
       // The allowlist is OS-enforced via package-SID ACL grants.
       assert.ok(/Invoke-IntegrityGrant/.test(runner), 'must grant the package SID on allowlisted paths');
       // Restricted token (non-AppContainer path): privileges deleted + Low IL.
