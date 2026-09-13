@@ -152,9 +152,24 @@ Aartiq uses a defense-in-depth security model with risk-based permissions, capab
 
 The full model — risk levels, defense-in-depth layers, encryption & vault migration, and remote-device security — is documented on the [Security Model page](https://aartiq.ponsrischool.in/docs/security).
 
-> **Verified in CI — and honest about its limits.** These invariants are covered by an automated Jest suite that runs in GitHub Actions on every push and pull request (`.github/workflows/jest.yml`).
+> **Verified in CI — and honest about its limits.** These invariants are covered by an automated Jest suite in `.github/workflows/jest.yml`. The suite is dispatched on demand (latest green run: [#34769503518](https://github.com/Latestinssan/Aartiq/actions/runs/34769503518)) and passed all four jobs:
+>
+> * **aartiq-browser full suite** (ubuntu): 25/26 suites — **537 passed / 40 environment-skipped / 0 failed** (577 declared tests)
+> * **Windows AppContainer runtime** (windows): 61 passed / 30 platform-skipped
+> * **macOS Seatbelt runtime** (macos): 104 passed
+> * **Linux bubblewrap runtime** (ubuntu): 57 passed / 21 skipped
 >
 > What it proves: the security logic we wrote behaves as designed — approval gating, params-hash verification, fail-closed sandboxing, directory allowlists, capability scoping, and the agent token-binding.
+>
+> Honest limits: runtime sandbox tests execute only on their own OS; OS-automation tests skip on runners without the native tools (e.g. `xdotool`/`xte`); and the CRX3 signature-verifier suite (`extensions.crx-verifier.test.ts`) is **currently skipped** — `verifyCrx()` hits a Node 24 OpenSSL decode error that hangs jest, so it is counted as skipped, never as passing, until the verifier's header parsing is fixed.
+
+### Windows sandboxing (v0.3.7+)
+
+v0.3.7 adds **AppContainer + Job Object** sandboxing on Windows. Before v0.3.7 the Job Object confined processes only; AppContainer adds OS-layer isolation — filesystem via package-SID ACL grants and network via zero capabilities — by starting the target with `CreateProcessW` in a suspended state inside the AppContainer and applying the Job Object at creation, so nothing runs even momentarily unsandboxed.
+
+* **CI-verified on real Windows** (`windows-latest`): the runtime matrix passes — suspended AppContainer start, OS-enforced ACL allowlist, verified job assignment, grandchild containment, secret isolation, and `KILL_ON_JOB_CLOSE` all return verified sandbox results.
+* **Audited:** design + source review in [`Audit Report/2026-09-13_Windows_AppContainer_Sandbox_Audit/SECURITY_AUDIT.md`](Audit%20Report/2026-09-13_Windows_AppContainer_Sandbox_Audit/SECURITY_AUDIT.md).
+* **Fail-closed:** any policy or setup failure returns a structured `SANDBOX_*` error; there is no fallback path that runs the command unsandboxed.
 
 ---
 
