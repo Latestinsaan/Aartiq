@@ -211,8 +211,8 @@ public static class JobRunnerNative {
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool ConvertStringSidToSid(string StringSid, out IntPtr Sid);
 
-    [DllImport("advapi32.dll", SetLastError = true)]
-    public static extern IntPtr ConvertSidToStringSid(IntPtr Sid);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool ConvertSidToStringSid(IntPtr Sid, out IntPtr StringSid);
 
     [DllImport("kernel32.dll")]
     public static extern IntPtr LocalFree(IntPtr hMem);
@@ -927,8 +927,9 @@ function Invoke-SandboxSetup {
   }
 
   # 2. Package SID as a string for the icacls grants.
-  $sidStrPtr = [JobRunnerNative]::ConvertSidToStringSid($script:acSidPtr)
-  if ($sidStrPtr -ne [IntPtr]::Zero) {
+  $sidStrPtr = [IntPtr]::Zero
+  $sidOk = [JobRunnerNative]::ConvertSidToStringSid($script:acSidPtr, [ref]$sidStrPtr)
+  if ($sidOk -and $sidStrPtr -ne [IntPtr]::Zero) {
     $script:acSid = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($sidStrPtr)
     # ConvertSidToStringSid returns LocalAlloc'd memory.
     [JobRunnerNative]::LocalFree($sidStrPtr)
