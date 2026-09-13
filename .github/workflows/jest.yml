@@ -20,6 +20,14 @@ on:
         description: 'Jest test path for the Windows job (e.g. tests/windows-job-sandbox.test.js)'
         required: false
         type: string
+      # Dispose the aartiq-browser full-suite job so a dispatch can run just the
+      # three OS sandbox runtime jobs (Windows + macOS + Linux). Useful when the
+      # generic Ubuntu full suite has unrelated blockers.
+      skip-full-suite:
+        description: 'Skip the aartiq-browser full-suite job (run only the three OS sandbox runtime jobs)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -31,7 +39,7 @@ jobs:
   jest:
     name: Run Jest (aartiq-browser)
     runs-on: ubuntu-latest
-    if: ${{ !inputs.windows-test-pattern }}
+    if: ${{ !inputs.windows-test-pattern && !inputs.skip-full-suite }}
     defaults:
       run:
         working-directory: aartiq-browser
