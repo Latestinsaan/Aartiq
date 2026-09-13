@@ -682,8 +682,12 @@ function createWindowsSandbox(command, args, options = {}) {
   const runnerPath = path.join(os.tmpdir(), `aartiq-runner-${tmpTag}.ps1`);
 
   try {
-    fs.writeFileSync(payloadPath, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 });
-    fs.writeFileSync(runnerPath, runnerScript, { encoding: 'utf8', mode: 0o600 });
+    // PowerShell 5.1 (powershell.exe) reads BOM-less .ps1/.json files as ANSI
+    // (Windows-1252), which corrupts any UTF-8 non-ASCII bytes and can even
+    // turn script bytes into stray quotes ("missing terminator" parse errors).
+    // A UTF-8 BOM forces PS 5.1 to decode the files as UTF-8.
+    fs.writeFileSync(payloadPath, '\uFEFF' + JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 });
+    fs.writeFileSync(runnerPath, '\uFEFF' + runnerScript, { encoding: 'utf8', mode: 0o600 });
   } catch (e) {
     try { fs.unlinkSync(payloadPath); } catch (e2) { /* best-effort */ }
     try { fs.unlinkSync(runnerPath); } catch (e2) { /* best-effort */ }

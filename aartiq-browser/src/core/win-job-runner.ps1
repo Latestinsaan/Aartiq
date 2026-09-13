@@ -1,5 +1,5 @@
 # ============================================================================
-# win-job-runner.ps1 — Aartiq Windows OS-level sandbox runner.
+# win-job-runner.ps1 - Aartiq Windows OS-level sandbox runner.
 #
 # SECURITY INVARIANTS
 # -------------------
@@ -16,7 +16,7 @@
 #        cannot enable any of them no matter what it runs. SeChangeNotify
 #        (traverse) is retained so legitimate paths still resolve.
 #      - Low mandatory integrity level (S-1-16-4096): the process cannot
-#        write to medium/high integrity objects. This is OS-ENFORCED — the
+#        write to medium/high integrity objects. This is OS-ENFORCED - the
 #        process kernel token carries the label, it is not an application
 #        convention.
 #      - AppContainer principal (SECURITY_CAPABILITIES + StartupInfoEx
@@ -26,7 +26,7 @@
 #        kernel via the AppContainer SID. The container ships with ZERO
 #        capabilities, so it CANNOT initiate network traffic (no
 #        internetClient / anyNetwork). Read/write is permitted ONLY to paths
-#        whose ACL explicitly grants the package SID — the allowlisted
+#        whose ACL explicitly grants the package SID - the allowlisted
 #        directories, the sandbox workspace, and the AppContainer profile
 #        folder (LOCALAPPDATA/TEMP rerouted by the OS).
 #      - Directory allowlist is OS-ENFORCED: before the target is launched,
@@ -40,7 +40,7 @@
 # 4. Every setup step failure returns a structured error and exits non-zero;
 #    the target is never allowed to run uncontained. If `useAppContainer`
 #    cannot be satisfied (old OS, API failure, grant failure on a writable
-#    path), the runner FAILS CLOSED — it never silently degrades to a
+#    path), the runner FAILS CLOSED - it never silently degrades to a
 #    less-isolated profile.
 # 5. The verification loop runs after setup: Job Object membership is
 #    re-checked before the target resumes. (The AppContainer SID and Low
@@ -397,7 +397,7 @@ public static class JobRunnerNative {
     }
 
     // TOKEN_MANDATORY_LABEL contains one SID_AND_ATTRIBUTES (the Low integrity
-    // SID with SE_GROUP_INTEGRITY). Structure is exactly one struct — a plain
+    // SID with SE_GROUP_INTEGRITY). Structure is exactly one struct - a plain
     // pointer + DWORD pair differs and would corrupt the SID_AND_ATTRIBUTES.
     [StructLayout(LayoutKind.Sequential)]
     public struct TOKEN_MANDATORY_LABEL {
@@ -714,7 +714,7 @@ public static class JobRunnerNative {
 
                     // bInheritHandles=true propagates our std handles. The
                     // extension attribute list is what turns the new process
-                    // into an AppContainer at creation time — it can never run
+                    // into an AppContainer at creation time - it can never run
                     // a single instruction inside a different security context.
                     if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
                             true, flags, envPtr, cwd, ref siex.StartupInfo, out pi)) {
@@ -904,7 +904,7 @@ function Invoke-IntegrityRevoke([string]$target) {
 }
 
 # ---------------------------------------------------------------
-# Invoke-SandboxSetup — create the AppContainer profile, grant the package SID
+# Invoke-SandboxSetup - create the AppContainer profile, grant the package SID
 # (directory allowlist + workspace + executable), and reroute temp paths.
 # Returns $null on success or an error string on failure. On failure, nothing
 # else has run and the caller rolls back partial grants.
@@ -953,7 +953,7 @@ function Invoke-SandboxSetup {
 
   # 4. OS-enforced directory allowlist grants.
   #    Required (fail closed if they fail): every writable path and the
-  #    workspace — without the package-SID ACE the target simply cannot write.
+  #    workspace - without the package-SID ACE the target simply cannot write.
   #    Workspace is always granted read-write.
   if ($ws -and (Test-Path -LiteralPath $ws -PathType Container)) {
     if (-not (Invoke-IntegrityGrant $ws '(OI)(CI)M')) {
@@ -975,7 +975,7 @@ function Invoke-SandboxSetup {
   foreach ($d in $readDirs) {
     if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue }
     if (-not (Invoke-IntegrityGrant $d '(OI)(CI)RX')) {
-      [Console]::Error.WriteLine("WIN SANDBOX: could not grant read access to $d (package SID) — path will stay denied")
+      [Console]::Error.WriteLine("WIN SANDBOX: could not grant read access to $d (package SID) - path will stay denied")
     } else {
       $script:grantedTargets += ,$d
     }

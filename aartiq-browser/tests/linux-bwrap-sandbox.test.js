@@ -25,8 +25,13 @@ const sandbox = require('../src/core/sandbox-executor');
 const LINUX_ISOLATION = { filesystem: true, network: true, process: true };
 const NO_ISOLATION = { filesystem: false, network: false, process: false };
 
+// Fake-bwrap tests rely on POSIX shell scripts, which Windows cannot spawn
+// without an extension. Skip them there (the real capability probe below is
+// still exercised on Windows via the ENOENT path).
+const posixIt = process.platform === 'win32' ? it.skip : it;
+
 describe('Linux bubblewrap — JS contract & fail-closed (any platform)', () => {
-  it('reports full OS-level isolation (filesystem/network/process)', () => {
+  posixIt('reports full OS-level isolation (filesystem/network/process)', () => {
     const fakeBwrap = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bw-')), 'fake-bwrap');
     fs.writeFileSync(fakeBwrap, '#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\ncase "$*" in *"/bin/true"*) exit 0;; esac\nexit 1\n');
     fs.chmodSync(fakeBwrap, 0o755);
@@ -42,7 +47,7 @@ describe('Linux bubblewrap — JS contract & fail-closed (any platform)', () => 
     );
   });
 
-  it('fails closed when bwrap exists but CANNOT create namespaces', () => {
+  posixIt('fails closed when bwrap exists but CANNOT create namespaces', () => {
     const fakeBwrap = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bw-')), 'fake-bwrap-incapable');
     // Satisfies --version but the namespace-capability probe (trailing
     // /bin/true) fails — the classic "bwrap present but unusable" trap.
