@@ -70,27 +70,46 @@ function extractText(doc) {
   return (text || '').replace(/\s+/g, ' ').trim();
 }
 
+// Run a callback with a JSDOM document and ALWAYS close the window. JSDOM
+// windows keep the Node event loop alive; leaving them open makes jest (or
+// any long-lived process) hang forever after the work completes.
+function withJSDOM(html, url, fn) {
+  const dom = new JSDOM(html, { url: url || 'about:blank' });
+  try {
+    return fn(dom);
+  } finally {
+    try {
+      dom.window.close();
+    } catch (_) {}
+  }
+}
+
 function extractFromHtml(html, url, options = {}) {
   const { maxChars = 8000, useReadability = true } = options;
 
   if (useReadability && _readabilityAvailable) {
     try {
       const { Readability } = require('@mozilla/readability');
-      const dom = new JSDOM(html, { url: url || 'about:blank' });
-      const reader = new Readability(dom.window.document, {
-        charThreshold: 100,
-        keepClasses: false,
+      const articleText = withJSDOM(html, url, (dom) => {
+        const reader = new Readability(dom.window.document, {
+          charThreshold: 100,
+          keepClasses: false,
+        });
+        const article = reader.parse();
+        return article && article.textContent
+          ? article.textContent.replace(/\s+/g, ' ').trim().substring(0, maxChars)
+          : null;
       });
-      const article = reader.parse();
-      if (article && article.textContent) {
-        return article.textContent.replace(/\s+/g, ' ').trim().substring(0, maxChars);
+      if (articleText) {
+        return articleText;
       }
     } catch (_) {}
   }
 
-  const dom = new JSDOM(html, { url: url || 'about:blank' });
-  stripJunkFromDom(dom.window.document);
-  return extractText(dom.window.document).substring(0, maxChars);
+  return withJSDOM(html, url, (dom) => {
+    stripJunkFromDom(dom.window.document);
+    return extractText(dom.window.document).substring(0, maxChars);
+  });
 }
 
 async function fetchPageContent(url, options = {}) {
@@ -120,12 +139,13 @@ function extractArticleFromHtml(html, url, options = {}) {
   if (_readabilityAvailable) {
     try {
       const { Readability } = require('@mozilla/readability');
-      const dom = new JSDOM(html, { url: url || 'about:blank' });
-      const reader = new Readability(dom.window.document, {
-        charThreshold: 100,
-        keepClasses: false,
+      const article = withJSDOM(html, url, (dom) => {
+        const reader = new Readability(dom.window.document, {
+          charThreshold: 100,
+          keepClasses: false,
+        });
+        return reader.parse();
       });
-      const article = reader.parse();
       if (article && article.textContent) {
         return {
           title: article.title || '',
@@ -141,19 +161,21 @@ function extractArticleFromHtml(html, url, options = {}) {
     } catch (_) {}
   }
 
-  const dom = new JSDOM(html, { url: url || 'about:blank' });
-  stripJunkFromDom(dom.window.document);
-  const text = extractText(dom.window.document).substring(0, maxChars);
-  return {
-    title: dom.window.document.title || '',
-    byline: '',
-    content: text,
-    html: '',
-    length: text.length,
-    excerpt: text.substring(0, 300),
-    siteName: '',
-    publishedTime: '',
-  };
+  const fallback = withJSDOM(html, url, (dom) => {
+    stripJunkFromDom(dom.window.document);
+    const text = extractText(dom.window.document).substring(0, maxChars);
+    return {
+      title: dom.window.document.title || '',
+      byline: '',
+      content: text,
+      html: '',
+      length: text.length,
+      excerpt: text.substring(0, 300),
+      siteName: '',
+      publishedTime: '',
+    };
+  });
+  return fallback;
 }
 
 module.exports = { fetchPageContent, extractFromHtml, extractArticleFromHtml, stripJunkFromDom, extractText, DEFAULT_UA, JUNK_SELECTORS, CONTENT_SELECTORS };

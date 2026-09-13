@@ -9,6 +9,25 @@ function readFixture(name) {
   return fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf-8');
 }
 
+// JSDOM windows keep the Node event loop alive; jest waits forever on open
+// handles at the end of the run. Track every window we open and close them
+// after each test so the suite can exit.
+const domsToClose = [];
+afterEach(() => {
+  while (domsToClose.length) {
+    try {
+      domsToClose.pop().window.close();
+    } catch (_) {}
+  }
+});
+
+function openJSDOM(html, url) {
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM(html, { url });
+  domsToClose.push(dom);
+  return dom;
+}
+
 describe('Regression: extract-page-content pipeline', () => {
   describe('Listing page (TechCrunch-like category page)', () => {
     let html;
@@ -24,8 +43,7 @@ describe('Regression: extract-page-content pipeline', () => {
     it('JSDOM fallback with stripJunkFromDom produces substantial content', () => {
       // Simulates the extract-page-content fallback path:
       // Readability returned too little -> parse with JSDOM + strip junk -> extract text
-      const { JSDOM } = require('jsdom');
-      const dom = new JSDOM(html, { url: 'https://techcrunch.com/category/artificial-intelligence/' });
+      const dom = openJSDOM(html, 'https://techcrunch.com/category/artificial-intelligence/');
       stripJunkFromDom(dom.window.document);
       const text = extractText(dom.window.document);
 
@@ -157,8 +175,7 @@ describe('Regression: extract-page-content pipeline', () => {
     });
 
     it('link-density heuristic strips flat div nav blocks', () => {
-      const { JSDOM } = require('jsdom');
-      const dom = new JSDOM(html, { url: 'https://www.reuters.com/technology/artificial-intelligence/' });
+      const dom = openJSDOM(html, 'https://www.reuters.com/technology/artificial-intelligence/');
       stripJunkFromDom(dom.window.document);
       const text = extractText(dom.window.document);
 
@@ -174,8 +191,7 @@ describe('Regression: extract-page-content pipeline', () => {
     });
 
     it('article content is preserved after junk stripping', () => {
-      const { JSDOM } = require('jsdom');
-      const dom = new JSDOM(html, { url: 'https://www.reuters.com/technology/artificial-intelligence/' });
+      const dom = openJSDOM(html, 'https://www.reuters.com/technology/artificial-intelligence/');
       stripJunkFromDom(dom.window.document);
       const text = extractText(dom.window.document);
 
@@ -189,8 +205,7 @@ describe('Regression: extract-page-content pipeline', () => {
     });
 
     it('data-testid nav elements are caught by expanded selectors', () => {
-      const { JSDOM } = require('jsdom');
-      const dom = new JSDOM(html, { url: 'https://www.reuters.com/technology/artificial-intelligence/' });
+      const dom = openJSDOM(html, 'https://www.reuters.com/technology/artificial-intelligence/');
 
       // Before stripping: site-index div exists
       expect(dom.window.document.querySelector('.site-index')).toBeTruthy();

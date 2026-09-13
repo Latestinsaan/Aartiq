@@ -200,13 +200,6 @@ public static class JobRunnerNative {
         IntPtr TokenInformation,
         uint TokenInformationLength);
 
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool SetTokenInformation(
-        IntPtr TokenHandle,
-        int TokenInformationClass,
-        ref IntPtr TokenInformation,
-        uint TokenInformationLength);
-
     [DllImport("advapi32.dll", SetLastError = true)]
     public static extern bool GetTokenInformation(
         IntPtr TokenHandle,
@@ -242,6 +235,13 @@ public static class JobRunnerNative {
 
     [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern int DeleteAppContainerProfile(string pszAppContainerName);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int CreateAppContainerToken(
+        IntPtr AppContainerSid,
+        IntPtr Capabilities,
+        uint CapabilityCount,
+        out IntPtr TokenHandle);
 
     // ---- Token information class constants ----
     public const int TokenPrivileges = 3;
@@ -581,6 +581,39 @@ public static class JobRunnerNative {
         }
     }
 
+    // Create the AppContainer token from the profile SID (zero capabilities =>
+    // deny-all network/device/user-handle access), then stamp the Low
+    // mandatory integrity label. Returns 0 on success; otherwise the HRESULT
+    // or Win32 error.
+    public static int CreateAppContainerLowToken(IntPtr acSid, out IntPtr token) {
+        token = IntPtr.Zero;
+        int hr = CreateAppContainerToken(acSid, IntPtr.Zero, 0, out token);
+        if (hr != 0) return hr;
+        IntPtr lowSid = IntPtr.Zero;
+        if (!ConvertStringSidToSid("S-1-16-4096", out lowSid)) {  // S-1-16-4096 = Low
+            return Marshal.GetLastWin32Error();
+        }
+        try {
+            TOKEN_MANDATORY_LABEL label = new TOKEN_MANDATORY_LABEL();
+            label.Label.Sid = lowSid;
+            label.Label.Attributes = SE_GROUP_INTEGRITY;
+            int size = Marshal.SizeOf(typeof(TOKEN_MANDATORY_LABEL));
+            IntPtr labelPtr = Marshal.AllocHGlobal(size);
+            try {
+                Marshal.StructureToPtr(label, labelPtr, false);
+                if (!SetTokenInformation(token, TokenIntegrityLevel, labelPtr, (uint)size)) {
+                    return Marshal.GetLastWin32Error();
+                }
+            } finally {
+                Marshal.FreeHGlobal(labelPtr);
+            }
+            return 0;
+        } finally {
+            // ConvertStringSidToSid returns LocalAlloc'd memory (LocalFree).
+            LocalFree(lowSid);
+        }
+    }
+
     public static int Run(string exe, string[] args, Dictionary<string, string> env,
         string cwd, int maxProcesses, long maxMemoryBytes, int timeoutMs,
         bool useAppContainer, IntPtr appContainerSid,
@@ -647,10 +680,14 @@ public static class JobRunnerNative {
                 }
                 hToken = primaryToken;
                 if (useAppContainer) {
-                    // Restricted token: dangerous privileges deleted + Low IL.
-                    rc = CreateRestrictedLowToken(primaryToken, out restrictedToken);
-                    if (rc != 0) {
-                        error = "CreateRestrictedToken/SetTokenInformation failed (0x" + rc.ToString("X8") + ")";
+                    // AppContainer token created from the profile SID with
+                    // zero capabilities (deny-all network/devices/user
+                    // handles) + Low integrity. The app container property
+                    // lives on the token itself, so CreateProcessAsUserW can
+                    // spawn it with a plain STARTUPINFO.
+                    int acrc = CreateAppContainerLowToken(appContainerSid, out restrictedToken);
+                    if (acrc != 0) {
+                        error = "CreateAppContainerToken/SetTokenInformation failed (0x" + acrc.ToString("X8") + ")";
                         return 3;
                     }
                     hToken = restrictedToken;
@@ -672,19 +709,11 @@ public static class JobRunnerNative {
             PROCESS_INFORMATION pi;
             uint flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB;
 
-            // AppContainer via the token, not the process attribute list:
-            // PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES is not supported by
-            // CreateProcessAsUserW (ERROR_NOT_SUPPORTED). Instead the restricted
-            // token is stamped with the AppContainer SID (TokenAppContainerSid)
-            // - exactly the pattern Chromium's sandbox uses. With zero
-            // capabilities the container gets zero network / device / user
-            // handle access, applied from the very first instruction.
+            // The AppContainer property is already embedded in restrictedToken
+            // (CreateAppContainerLowToken). CreateProcessAsUserW uses the
+            // plain STARTUPINFO without EXTENDED_STARTUPINFO_PRESENT.
             baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
             if (useAppContainer) {
-                if (!SetTokenInformation(restrictedToken, TokenAppContainerSid, ref appContainerSid, (uint)IntPtr.Size)) {
-                    error = "SetTokenInformation(TokenAppContainerSid) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                    return 4;
-                }
                 appContainer = true;
             }
 

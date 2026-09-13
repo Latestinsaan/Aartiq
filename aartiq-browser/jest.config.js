@@ -28,4 +28,5 @@ module.exports = {
   coverageDirectory: 'coverage',
   verbose: true,
   testTimeout: 30000,
+  openHandlesTimeout: 5000,
 };
