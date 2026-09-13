@@ -179,7 +179,7 @@ public static class JobRunnerNative {
         uint dwCreationFlags,
         IntPtr lpEnvironment,
         string lpCurrentDirectory,
-        IntPtr lpStartupInfo,
+        ref STARTUPINFOEX lpStartupInfo,
         out PROCESS_INFORMATION lpProcessInformation);
 
     // ---- Token isolation (restricted token + integrity level) ----
@@ -726,22 +726,13 @@ public static class JobRunnerNative {
                     siex.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEX));
                     siex.lpAttributeList = attrList;
 
-                    IntPtr siexPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(STARTUPINFOEX)));
-                    try {
-                        Marshal.StructureToPtr(siex, siexPtr, false);
-                    } catch {
-                        error = "Failed to marshal STARTUPINFOEX";
-                        return 4;
-                    }
                     // bInheritHandles=true propagates our std handles.
                     if (!CreateProcessW(null, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
-                            true, flags | EXTENDED_STARTUPINFO_PRESENT, envPtr, cwd, siexPtr, out pi)) {
-                        Marshal.FreeHGlobal(siexPtr);
+                            true, flags | EXTENDED_STARTUPINFO_PRESENT, envPtr, cwd, ref siex, out pi)) {
                         error = "CreateProcessW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
                         return 4;
                     }
                     appContainer = true;
-                    Marshal.FreeHGlobal(siexPtr);
                 } finally {
                     DeleteProcThreadAttributeList(attrList);
                     Marshal.FreeHGlobal(attrList);
