@@ -17,6 +17,30 @@ export interface ReleaseEntry {
 
 export const releases: ReleaseEntry[] = [
   {
+    version: '0.4.0',
+    date: '2026-09-13',
+    codename: 'AppContainer',
+    channel: 'stable',
+    changes: {
+      new: [
+        'Windows AppContainer OS-level sandboxing — commands run as an AppContainer under a restricted, Low-integrity token inside a verified Job Object; same OS-enforced guarantees as Seatbelt and bubblewrap',
+        'Hardened macOS Seatbelt profiles — additionally deny AF_UNIX sockets, confine signals to the sandbox, deny mount/umount, and restrict executable mappings',
+        'Hardened Linux bubblewrap — namespaces expanded to user/cgroup plus a new session; capability pre-flight probes the same flags and fails closed',
+      ],
+      security: [
+        'Windows directory allowlist enforced by the OS via ACL grants on the AppContainer package SID (icacls); grants revoked and profile deleted after each run',
+        'Windows network denied by zero AppContainer capabilities; high/critical-risk commands get deny-all network on every platform',
+        'macOS (deny system-socket) closes AF_UNIX IPC (syslog, Docker, P2P) not covered by the existing network* block',
+        'macOS signal confinement — (deny signal) by default, allowed only for the sandbox self and children',
+        'Linux user and cgroup namespaces closed via --unshare-user and --unshare-cgroup; --new-session isolates terminal',
+      ],
+      docs: [
+        'README, CHANGELOG, and release notes document AppContainer, hardened macOS/Linux profiles, and remaining honest limitations',
+        'Security audit report updated with platform hardening and residual limitation caveats',
+      ],
+    },
+  },
+  {
     version: '0.3.6',
     date: '2026-08-19',
     codename: 'Aegis',

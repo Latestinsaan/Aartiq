@@ -72,7 +72,7 @@ describe('Linux bubblewrap — JS contract & fail-closed (any platform)', () => 
 
   it('requests all required namespaces and read-only system mounts', () => {
     const args = sandbox.buildBubblewrapArgs('/bin/ls', [], { workspace: '/tmp' });
-    for (const f of ['--unshare-pid', '--unshare-net', '--unshare-ipc', '--unshare-uts']) {
+    for (const f of ['--unshare-pid', '--unshare-net', '--unshare-ipc', '--unshare-uts', '--unshare-cgroup', '--unshare-user', '--new-session']) {
       assert.ok(args.includes(f), `must include ${f}`);
     }
     assert.ok(args.includes('--ro-bind'), 'system mounts must be read-only');

@@ -45,12 +45,14 @@ jobs:
       - name: Run Jest
         run: npm test -- --ci --runInBand
 
-  # Windows runtime verification for the Job Object sandbox. The macOS/Linux
-  # runtime tests skip on Windows, but windows-job-sandbox.test.js's runtime
-  # matrix (suspended start, verified job assignment, grandchild containment,
-  # secret isolation, KILL_ON_JOB_CLOSE) only executes here — on real Windows.
+  # Windows runtime verification for the AppContainer + Job Object sandbox.
+  # The macOS/Linux runtime tests skip on Windows, but the runtime matrix in
+  # windows-job-sandbox.test.js (suspended AppContainer start, OS-enforced
+  # allowlist, verified job assignment, grandchild containment, secret
+  # isolation, KILL_ON_JOB_CLOSE) only executes here — on real Windows, with
+  # the real win-job-runner.ps1.
   windows-sandbox:
-    name: Run Jest (Windows sandbox runtime)
+    name: Run Jest (Windows AppContainer sandbox runtime)
     runs-on: windows-latest
     defaults:
       run:
@@ -73,3 +75,63 @@ jobs:
 
       - name: Run Windows sandbox tests
         run: npx jest tests/sandbox-security.test.js tests/windows-job-sandbox.test.js tests/linux-bwrap-sandbox.test.js --ci --runInBand
+
+  # macOS runtime verification. GitHub's macos runners ship /usr/bin/sandbox-exec
+  # and python3, so the Seatbelt adversarial suite (file allowlist, IP + AF_UNIX
+  # network denial, signal confinement, symlink escapes) runs for real here.
+  macos-sandbox:
+    name: Run Jest (macOS Seatbelt sandbox runtime)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: aartiq-browser
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aartiq-browser/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run macOS sandbox tests
+        run: npx jest tests/sandbox-security.test.js tests/security-fixes.test.js --ci --runInBand
+
+  # Linux runtime verification. GitHub-hosted Ubuntu runners often restrict
+  # user namespaces, so these tests may skip at runtime (bwrap capability probe
+  # fails closed → runtime blocks skip, fail-closed contract tests still run).
+  # Run on a runner where userns is enabled for full enforcement coverage.
+  linux-sandbox:
+    name: Run Jest (Linux bubblewrap sandbox runtime)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aartiq-browser
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: aartiq-browser/package-lock.json
+
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Linux sandbox tests
+        run: npx jest tests/linux-bwrap-sandbox.test.js tests/sandbox-security.test.js --ci --runInBand

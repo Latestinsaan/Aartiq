@@ -27,9 +27,10 @@ Command execution on Windows is now sandboxed at the OS layer:
 | Reported isolation | `{false, false, true}` | `{true, true, true}` |
 
 **Verdict:** the design meets the fail-closed contract and is aligned with
-Microsoft's own AppContainer launch guidance. **Runtime verification on a real
-Windows host remains outstanding** (see §7) and must be completed on a Windows
-CI matrix before 0.4.0 ships.
+Microsoft's own AppContainer launch guidance. **Runtime verification is
+happening on a real Windows host via the CI matrix** (windows-latest, plus
+macos-latest for the hardened Seatbelt profile, see §7 and §8) and must be
+green before 0.4.0 ships.
 
 ---
 
@@ -172,15 +173,93 @@ validator, not as the security boundary.
 
 ## 7. Outstanding work (pre-release gate)
 
-1. **Execute `win-job-runner.ps1` on a real Windows host** (Win10 22H2, Win11,
-    Server 2022 CI matrix). Verify: AppContainer profile create/delete, ACL
-   grant/revoke on a scratch tree, CreateProcessAsUser under AppContainer
+1. **Execute `win-job-runner.ps1` on a real Windows host.** This is now wired
+   into CI: `.github/workflows/jest.yml` runs the sandbox suites on
+   `windows-latest` (AppContainer runtime), `macos-latest` (Seatbelt runtime),
+   and `ubuntu-latest` (bubblewrap) on every push/PR. Gate: the `windows-sandbox`
+   job must pass before 0.4.0 ships. Verify: AppContainer profile create/delete,
+   ACL grant/revoke on a scratch tree, CreateProcessAsUser under AppContainer
    attribute list, Low-IL restricted token, `appContainer`/`jobAssigned`
    verification flags, TEMP-isolation, and the process-death behaviors.
 2. Confirm no AV/AppLocker policy blocks `CreateAppContainerProfile` in managed
-   environments.
+   environments (a Windows CI run is the first signal; real-device matrix later).
 3. End-to-end network assertion (`Test-NetConnection` from inside the sandbox
-   must fail).
+   must fail) — part of the Windows runtime matrix in CI.
 
-Until (1)–(3) are green, the Windows sandbox is **code-complete but
-runtime-unverified** — do not claim AppContainer enforcement in release notes.
+Until it runs green on the Windows CI matrix, the Windows sandbox is **code-complete
+but runtime-unverified** — release notes must keep that caveat even while the
+design review is done.
+
+---
+
+## 8. Concurrent hardening — macOS Seatbelt & Linux bubblewrap (v0.4.0)
+
+Scope of this update: review the macOS and Linux sandbox implementations against
+their platform primitives, harden the generated policies, and prove the new
+behavior at runtime on macOS.
+
+### 8.1 macOS (src/core/sandbox-executor.js — `generateSeatbeltProfile`)
+
+Seatbelt profiles start from `(allow default)`, so "closed by default" is not
+literally true for every operation class. This audit hardened the classes that
+matter:
+
+| Change | Syntax | Effect |
+|---|---|---|
+| Deny AF_UNIX sockets | `(deny system-socket)` | `network*` only covers IP sockets; AF_UNIX (syslog, Docker, P2P services, local daemons) is now closed |
+| Signal confinement | `(deny signal)` + `(allow signal (target self))` + `(allow signal (target children))` | A sandboxed process can signal its own tree but not unrelated host processes |
+| Executable-mapping strictness | `(deny file-map-executable)` + `(allow file-map-executable …)` mirrored from the process-exec allowlist | No executable mappings outside the exec allowlist (W^X-relevant) |
+| mount/umount | `(deny file-write-mount file-write-umount)` | The file allowlist cannot be widened at runtime |
+
+The pre-existing hardens (deny file-read*/file-write*, allow only system paths +
+allowlist + workspace, deny network*, deny process-exec*, symlink-following
+denied) remain. `validateSeatbeltProfile` pre-flight still runs the profile
+against `/usr/bin/true` and fails closed if it does not compile.
+
+**Runtime proof (this macOS host):** IP bind DENIED, AF_UNIX bind DENIED,
+self-signal ALLOWED, signal-to-parent DENIED, write outside allowlist DENIED,
+write to workspace + /tmp ALLOWED, `/etc` readable, python3 interpreter runs
+normally. These exact scenarios are now automated in
+`tests/sandbox-security.test.js` (adversarial suite, darwin-only) and run in CI
+on `macos-latest`.
+
+**Residual / by design (documented, not silently claimed):**
+- macOS Sandbox (2011) is deprecated by Apple until it hard-won't-be-removed;
+  it is not the modern App Sandbox API. It works and is enforced, but has no
+  vendor roadmap. ✓ honest limitation, not a fix.
+- Mach IPC is *not* denied-by-default under Seatbelt without breaking node/
+  python/shell. We do not claim IPC isolation on macOS.
+- **Apple Events cannot be filtered by sandbox-exec** on current macOS
+  (`apple-event-send`/`apple-event-receive` operations are not exposed). A
+  sandboxed command could still drive another app via AppleScript/AppleEvents.
+  Documented in README + security docs as a limitation; no fix available at
+  this layer.
+
+### 8.2 Linux (src/core/sandbox-executor.js — `buildBubblewrapArgs`)
+
+| Change | Flag | Why |
+|---|---|---|
+| User namespace | `--unshare-user` | Map root inside the sandbox; isolate uid/gid mappings (defense-in-depth vs host userns attacks) |
+| Cgroup namespace | `--unshare-cgroup` | New cgroup root; namespace is not tied to the host cgroup hierarchy |
+| New session | `--new-session` | Process is a session leader in a new session; no controlling terminal left attached |
+| (kept) | `--unshare-pid --unshare-net --unshare-ipc --unshare-uts` | Existing baseline |
+
+The capability pre-flight probe now runs the same expanded flag set, so on
+environments where any required namespace cannot be created the sandbox **fails
+closed** (SANDBOX_UNAVAILABLE) instead of degrading. Not locally executable here
+(no bwrap on macOS host); the arg-generation, probe, and fail-closed paths are
+unit-tested cross-platform, and runtime enforcement is exercised in CI on
+`ubuntu-latest` where user namespaces are available.
+
+### 8.3 CI matrix (`.github/workflows/jest.yml`)
+
+| Job | Runner | Exercises |
+|---|---|---|
+| `jest` | ubuntu-latest | full cross-platform contract suite |
+| `windows-sandbox` | windows-latest | real AppContainer runtime matrix (§6) |
+| `macos-sandbox` | macos-latest | Seatbelt runtime enforcement incl. §8.1 |
+| `linux-sandbox` | ubuntu-latest | bwrap runtime; skips if runner blocks userns (fail-closed contract tests still run) |
+
+Existing `security-fixes.test.js`, `linux-bwrap-sandbox.test.js`, and
+`sandbox-security.test.js` assertions were reconciled with the new namespaces
+and profile lines.

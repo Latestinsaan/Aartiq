@@ -12,13 +12,17 @@
  * unsandboxed is the explicit `useSandbox: false` escape hatch, which is
  * documented as unsandboxed execution and reported as such in the result.
  *
- * Platform guarantees (v0.3.5+):
+ * Platform guarantees (v0.4.0+):
  *   macOS  — Seatbelt (sandbox-exec) with a closed-by-default profile:
- *            deny file-read/write, re-allow only system paths + allowlisted
- *            directories, deny all network, confine process-exec.
- *   Linux  — bubblewrap (bwrap): namespaces (pid/net/ipc/uts), read-only
- *            system mounts, allowlisted bind mounts (read-only vs read-write),
- *            private /tmp, network disabled via --unshare-net.
+ *            deny file-read/write (re-allow only system paths + allowlisted
+ *            directories + workspace), deny all IP network AND AF_UNIX
+ *            sockets ((deny system-socket)), confine process-exec and
+ *            file-map-executable to the allowlist, deny mount/umount, and
+ *            confine signals to the sandbox's own processes (self/children).
+ *   Linux  — bubblewrap (bwrap): full namespace isolation
+ *            (pid/net/ipc/uts/user/cgroup + new session), read-only system
+ *            mounts, allowlisted bind mounts (read-only vs read-write),
+ *            private /tmp, network disabled via --unshare-net, --die-with-parent.
  *   Windows — AppContainer OS-level sandbox (Windows 8+): the target is
  *            created SUSPENDED under a restricted token (dangerous privileges
  *            deleted, Low integrity label) inside a verified Job Object, then
@@ -28,6 +32,20 @@
  *            (icacls); anything not allowlisted stays DENIED. ZERO
  *            capabilities => NO network access. Grants and the AppContainer
  *            profile are removed after every run.
+ *
+ * HONEST LIMITATIONS (see Audit Report/2026-09-13_..._audit):
+ *   - Seatbelt profiles start from `(allow default)`; denied-by-default IPC is
+ *     NOT claimed. Mach IPC remains default-allowed (required so arbitrary
+ *     node/python/shell commands keep working). Signals and AF_UNIX sockets are
+ *     denied explicitly. Apple Events cannot be filtered by current sandbox-exec
+ *     (operation not exposed), so a sandboxed process could ask another app to
+ *     perform actions on its behalf — document this when writing policy docs.
+ *   - sandbox-exec is deprecated by Apple; it still works but is not part of
+ *     the App Sandbox API and has no support guarantees.
+ *   - bubblewrap is an unprivileged userns-based boundary between the sandbox
+ *     and everything else the same user can reach; it is NOT a boundary against
+ *     the OS/root, and a non-setuid bwrap + userns must be enabled (probed
+ *     before use).
  *
  * RESULT CONTRACT
  * ---------------
@@ -286,11 +304,19 @@ function generateSeatbeltProfile(options = {}) {
 (allow default)
 
 ; Network: fully denied. Seatbelt cannot match per-domain destinations.
+; system-socket additionally kills AF_UNIX sockets — network* only covers
+; IP sockets, and AF_UNIX is a local exfiltration/tampering channel
+; (syslog, docker, ...) that must not survive the sandbox.
 (deny network*)
+(deny system-socket)
 
-; Filesystem: closed by default, then allowlisted.
+; Filesystem: closed by default, then allowlisted. Do not allow mount/
+; umount (would defeat the path allowlist) and do not allow mapping
+; executable pages from files outside the exec allowlist (a compact way to
+; "run" a payload the process-exec filter would otherwise block).
 (deny file-read*)
 (deny file-write*)
+(deny file-write-mount file-write-umount)
 
 (allow file-read*
 ${readBlock}
@@ -303,12 +329,24 @@ ${writeBlock}
 ; Read-only allowlist entries can never be written.
 ${carveOuts}
 
-; Process execution confined to system + allowlisted paths.
+; Process execution confined to system + allowlisted paths. Executable
+; mappings are equally confined so JIT/loaders cannot map in payloads from
+; non-allowlisted files under a benign name.
 (deny process-exec*)
+(deny file-map-executable)
 (allow process-exec*
 ${execBlock}
 )
+(allow file-map-executable
+${execBlock}
+)
 (allow process-fork)
+
+; Signal discipline: the sandbox may only signal its own processes.
+; (allow default) covers IPC by design (Mach) — see the audit report "by
+; design" section; per-process signals are NOT part of that and stay denied
+; for other processes.
+(deny signal)
 (allow signal (target self))
 (allow signal (target children))
 `.trim();
@@ -438,6 +476,9 @@ function buildBubblewrapArgs(command, args, options = {}) {
     '--unshare-net',
     '--unshare-ipc',
     '--unshare-uts',
+    '--unshare-cgroup',
+    '--unshare-user',
+    '--new-session',
     '--ro-bind', '/usr', '/usr',
     '--ro-bind', '/bin', '/bin',
     '--ro-bind', '/sbin', '/sbin',
@@ -484,7 +525,10 @@ function checkBwrapCapability(bwrapPath) {
   try {
     cap = spawnSync(
       bwrapPath,
-      ['--ro-bind', '/', '/', '--unshare-pid', '--unshare-net', '--unshare-ipc', '--unshare-uts', '/bin/true'],
+      ['--ro-bind', '/', '/',
+        '--unshare-pid', '--unshare-net', '--unshare-ipc', '--unshare-uts',
+        '--unshare-user', '--unshare-cgroup', '--new-session',
+        '/bin/true'],
       { encoding: 'utf8', timeout: 15000 }
     );
   } catch (e) {

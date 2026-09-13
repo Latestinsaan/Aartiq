@@ -95,6 +95,23 @@ describe('macOS Seatbelt (generateSeatbeltProfile / validateSeatbeltProfile)', (
     );
   });
 
+  it('should harden IPC/signal/exec channels beyond plain network denial', () => {
+    const profile = sandbox.generateSeatbeltProfile({ workspace: ws });
+    // AF_UNIX sockets (syslog, docker, P2P services) are NOT covered by
+    // (deny network*) — they must be shut down separately.
+    assert.ok(profile.includes('(deny system-socket)'), 'must deny AF_UNIX sockets');
+    // Signals must be confined to the sandbox's own processes; the default
+    // (allow default) baseline would otherwise permit signaling anyone.
+    assert.ok(profile.includes('(deny signal)'), 'must deny signals by default');
+    assert.ok(profile.includes('(allow signal (target self))'), 'must allow self-signal');
+    assert.ok(profile.includes('(allow signal (target children))'), 'must allow child-signal');
+    // mount/umount would defeat the file allowlist.
+    assert.ok(profile.includes('(deny file-write-mount file-write-umount)'), 'must deny mount/umount');
+    // Executable mappings confined to the same allowlist as process-exec.
+    assert.ok(profile.includes('(deny file-map-executable)'), 'must deny exec mappings by default');
+    assert.ok(profile.includes('(allow file-map-executable'), 'must allow exec mappings on allowlist');
+  });
+
   it('should report SANDBOX_UNAVAILABLE when sandbox-exec is missing', () => {
     const result = sandbox.validateSeatbeltProfile(
       path.join(tmpDir, 'x.sb'),
@@ -672,6 +689,31 @@ describe('Seatbelt adversarial enforcement (macOS only)', () => {
     const res = await run(pyBin, ['-c', script]);
     assert.strictEqual(res.sandboxed, true);
     assert.strictEqual(res.success, false, 'network bind must be denied under Seatbelt');
+  });
+
+  it('should deny a local AF_UNIX socket (system-socket isolation)', async function () {
+    if (process.platform !== 'darwin') return this.skip();
+    if (!hasPython) return this.skip();
+    // network* only covers IP sockets. AF_UNIX (syslog, docker, IPC daemons)
+    // is shut down separately with (deny system-socket); a bind must fail.
+    const script = 'import socket,os\ns=socket.socket(socket.AF_UNIX)\ns.bind("/tmp/aartiq-afunix-"+str(os.getpid())+".sock")\n';
+    const res = await run(pyBin, ['-c', script]);
+    assert.strictEqual(res.sandboxed, true);
+    assert.strictEqual(res.success, false, 'AF_UNIX bind must be denied under Seatbelt');
+  });
+
+  it('may signal itself but not other processes (signal confinement)', async function () {
+    if (process.platform !== 'darwin') return this.skip();
+    if (!hasPython) return this.skip();
+    const selfOk = 'import os,signal; os.kill(os.getpid(), signal.SIGCONT)';
+    const resSelf = await run(pyBin, ['-c', selfOk]);
+    assert.strictEqual(resSelf.sandboxed, true);
+    assert.strictEqual(resSelf.success, true, resSelf.stderr || 'self-signal must be allowed');
+
+    const otherBlocked = 'import os,signal\np=os.getppid()\nos.kill(p, signal.SIGCONT)\n';
+    const resOther = await run(pyBin, ['-c', otherBlocked]);
+    assert.strictEqual(resOther.sandboxed, true);
+    assert.strictEqual(resOther.success, false, 'signalling other processes must be denied');
   });
 
   it('should DENY reading through a symlink that escapes the allowlist', async function () {

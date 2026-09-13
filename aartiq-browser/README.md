@@ -157,7 +157,7 @@ Centralized DOM interaction engine with cascading fallback strategies:
 - **Element Resolution**: CSS selector → text content → ARIA role → placeholder → broad scan
 - **Multi-field Forms**: `dom-multi-fill-form` for atomic form filling
 - **Click Hardening**: Default fallback strategies ensure buttons are found even with empty params
-- **110 Jest Tests**: Full coverage for engine v2, skill loading, and handler fallbacks
+- **110 Jest Tests**: covering engine v2, skill loading, and handler fallbacks (declared test blocks)
 
 ## Build
 

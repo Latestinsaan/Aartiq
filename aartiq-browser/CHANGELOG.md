@@ -13,6 +13,23 @@
 - **Fail closed**: any step (profile creation, SID derivation, ACL grant, suspended start, job assignment verification) failing denies the command with `SANDBOX_SETUP_FAILED`; execution never falls back to an unsandboxed process.
 - `isolation` results now report `{ filesystem: true, network: true, process: true }` on win32; results also carry `appContainer`, `restrictedToken`, and `integrityLevel` fields.
 
+#### macOS Seatbelt Hardening
+- The generated profile now **denies AF_UNIX sockets** (`(deny system-socket)`) in addition to the existing `(deny network*)` IP-socket block. Local IPC sockets (syslog, Docker, P2P services) are no longer reachable from the sandbox.
+- **Signal confinement**: `(deny signal)` by default, re-allowed only for the sandbox's own processes (`(allow signal (target self))` and `(target children)`); a sandboxed command can no longer signal unrelated host processes.
+- **Executable-mapping strictness**: `(deny file-map-executable)` with `(allow file-map-executable ...)` mirrors the existing process-exec allowlist.
+- **mount/umount denied** (`(deny file-write-mount file-write-umount)`) so the file allowlist cannot be widened at runtime.
+- These hardening rules are asserted in `tests/sandbox-security.test.js` and proven at runtime on macOS (AF_UNIX bind denied, cross-process signal denied, self-signal allowed).
+
+#### Linux bubblewrap Hardening
+- Sandbox namespaces expanded to **pid/net/ipc/uts/user/cgroup + a new session** (`--unshare-user`, `--unshare-cgroup`, `--new-session`), closing escape routes through cgroups, user namespaces, and controlling terminals.
+- The capability pre-flight probe now exercises the same expanded flags, so environments where those namespaces cannot be created fail closed instead of degrading.
+
+#### CI Platform Matrix
+- `.github/workflows/jest.yml` now runs the sandbox suites on **all three platforms**: `windows-latest` (AppContainer runtime), `macos-latest` (Seatbelt runtime enforcement), and `ubuntu-latest` (bubblewrap; runtime blocks skip if the runner restricts user namespaces, while fail-closed contract tests always run).
+- Windows AppContainer runtime invariants (suspended start, OS-enforced ACL allowlist, verified Job Object, grandchild containment, kill-on-close) execute on every push/PR on `windows-latest`.
+
+### Files Changed (Key)
+
 ### Files Changed (Key)
 
 | File | Change |
