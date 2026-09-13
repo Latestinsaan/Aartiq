@@ -3,6 +3,12 @@ const path = require('path');
 
 const { automationLayer, PLATFORM } = require('../src/automation');
 
+// jest-circus has no `this.skip()` (Jasmine-only). Register the OS
+// automation tests as skipped unless the native backend exists on this
+// runner (xdotool / xte absent -> unavailable -> skip, e.g. ubuntu CI).
+const automationAvailable = automationLayer.isAvailable;
+const itWhenAvailable = (title, fn) => (automationAvailable ? it(title, fn) : it.skip(title, fn));
+
 describe('Automation Layer', () => {
   beforeAll(async () => {
     await automationLayer.initialize();
@@ -46,11 +52,7 @@ describe('Automation Layer', () => {
   });
 
   describe('moveMouse', () => {
-    it('should not throw for valid coordinates', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should not throw for valid coordinates', () => {
       assert.doesNotThrow(() => {
         automationLayer.moveMouse(100, 100);
       });
@@ -58,31 +60,19 @@ describe('Automation Layer', () => {
   });
 
   describe('click', () => {
-    it('should not throw for valid click', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should not throw for valid click', () => {
       assert.doesNotThrow(() => {
         automationLayer.click(100, 100, 'left', false);
       });
     });
 
-    it('should handle different buttons', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle different buttons', () => {
       assert.doesNotThrow(() => {
         automationLayer.click(100, 100, 'right', false);
       });
     });
 
-    it('should handle double click', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle double click', () => {
       assert.doesNotThrow(() => {
         automationLayer.click(100, 100, 'left', true);
       });
@@ -90,21 +80,13 @@ describe('Automation Layer', () => {
   });
 
   describe('typeText', () => {
-    it('should handle empty string', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle empty string', () => {
       assert.doesNotThrow(() => {
         automationLayer.typeText('');
       });
     });
 
-    it('should handle regular text', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle regular text', () => {
       assert.doesNotThrow(() => {
         automationLayer.typeText('Hello World');
       });
@@ -112,21 +94,13 @@ describe('Automation Layer', () => {
   });
 
   describe('keyTap', () => {
-    it('should handle basic keys', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle basic keys', () => {
       assert.doesNotThrow(() => {
         automationLayer.keyTap('return', []);
       });
     });
 
-    it('should handle keys with modifiers', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle keys with modifiers', () => {
       assert.doesNotThrow(() => {
         automationLayer.keyTap('a', ['command']);
       });
@@ -134,11 +108,7 @@ describe('Automation Layer', () => {
   });
 
   describe('scroll', () => {
-    it('should handle scroll directions', function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should handle scroll directions', () => {
       assert.doesNotThrow(() => {
         automationLayer.scroll(100, 100, 'up', 1);
         automationLayer.scroll(100, 100, 'down', 1);
@@ -147,32 +117,24 @@ describe('Automation Layer', () => {
   });
 
   describe('executeClickSequence', () => {
-    it('should execute a sequence of actions', async function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should execute a sequence of actions', async () => {
       const actions = [
         { type: 'move', x: 100, y: 100 },
         { type: 'click', x: 100, y: 100, button: 'left', double: false },
       ];
-      
+
       const results = await automationLayer.executeClickSequence(actions);
       assert.ok(Array.isArray(results));
       assert.strictEqual(results.length, 2);
     });
 
-    it('should stop on error when configured', async function () {
-      if (!automationLayer.isAvailable) {
-        this.skip();
-        return;
-      }
+    itWhenAvailable('should stop on error when configured', async () => {
       const actions = [
         { type: 'click', x: 100, y: 100 },
         { type: 'invalid', x: 100, y: 100 },
         { type: 'click', x: 200, y: 200 },
       ];
-      
+
       const results = await automationLayer.executeClickSequence(actions, { stopOnError: true });
       assert.strictEqual(results.length, 2);
     });
