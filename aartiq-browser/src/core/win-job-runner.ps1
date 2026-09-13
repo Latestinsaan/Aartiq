@@ -200,6 +200,13 @@ public static class JobRunnerNative {
         IntPtr TokenInformation,
         uint TokenInformationLength);
 
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool SetTokenInformationAppContainerSid(
+        IntPtr TokenHandle,
+        int TokenInformationClass,
+        ref IntPtr TokenInformation,
+        uint TokenInformationLength);
+
     [DllImport("advapi32.dll", SetLastError = true)]
     public static extern bool GetTokenInformation(
         IntPtr TokenHandle,
@@ -593,8 +600,6 @@ public static class JobRunnerNative {
         IntPtr primaryToken = IntPtr.Zero;
         IntPtr restrictedToken = IntPtr.Zero;
         IntPtr envPtr = IntPtr.Zero;
-        IntPtr attrList = IntPtr.Zero;
-        IntPtr capsPtr = IntPtr.Zero;
         IntPtr hToken = IntPtr.Zero;
 
         try {
@@ -666,78 +671,28 @@ public static class JobRunnerNative {
 
             PROCESS_INFORMATION pi;
             uint flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB;
+
+            // AppContainer via the token, not the process attribute list:
+            // PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES is not supported by
+            // CreateProcessAsUserW (ERROR_NOT_SUPPORTED). Instead the restricted
+            // token is stamped with the AppContainer SID (TokenAppContainerSid)
+            // - exactly the pattern Chromium's sandbox uses. With zero
+            // capabilities the container gets zero network / device / user
+            // handle access, applied from the very first instruction.
+            baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
             if (useAppContainer) {
-                try {
-                    // STARTUPINFOEX + PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
-                    // is the Microsoft-sanctioned way to create an AppContainer
-                    // process. The OS derives the AppContainer token from the
-                    // (restricted) token we pass. Zero capabilities -> zero
-                    // network, zero device, zero user-handle access.
-                    STARTUPINFOEX siex = new STARTUPINFOEX();
-                    siex.StartupInfo = baseSi;
-                    siex.StartupInfo.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFOEX));
-                    siex.lpAttributeList = IntPtr.Zero;
-                    flags |= EXTENDED_STARTUPINFO_PRESENT;
-
-                    SECURITY_CAPABILITIES caps = new SECURITY_CAPABILITIES();
-                    caps.AppContainerSid = appContainerSid;
-                    caps.Capabilities = IntPtr.Zero;
-                    caps.CapabilityCount = 0;
-                    caps.Reserved = 0;
-
-                    // First call sizes the attribute list (returns FALSE with
-                    // ERROR_INSUFFICIENT_BUFFER).
-                    UIntPtr listSize = UIntPtr.Zero;
-                    InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref listSize);
-                    if (Marshal.GetLastWin32Error() != (int)ERROR_INSUFFICIENT_BUFFER) {
-                        error = "InitializeProcThreadAttributeList sizing failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 40;
-                    }
-                    attrList = HeapAlloc(GetProcessHeap(), 0, listSize);
-                    if (attrList == IntPtr.Zero) {
-                        error = "HeapAlloc(attribute list) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 41;
-                    }
-                    if (!InitializeProcThreadAttributeList(attrList, 1, 0, ref listSize)) {
-                        error = "InitializeProcThreadAttributeList failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 42;
-                    }
-                    capsPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)));
-                    Marshal.StructureToPtr(caps, capsPtr, false);
-                    if (!UpdateProcThreadAttribute(attrList, 0,
-                            (UIntPtr)PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-                            capsPtr,
-                            (IntPtr)Marshal.SizeOf(typeof(SECURITY_CAPABILITIES)),
-                            IntPtr.Zero, IntPtr.Zero)) {
-                        error = "UpdateProcThreadAttribute failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 43;
-                    }
-                    siex.lpAttributeList = attrList;
-
-                    // bInheritHandles=true propagates our std handles. The
-                    // extension attribute list is what turns the new process
-                    // into an AppContainer at creation time - it can never run
-                    // a single instruction inside a different security context.
-                    if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
-                            true, flags, envPtr, cwd, ref siex.StartupInfo, out pi)) {
-                        error = "CreateProcessAsUserW (AppContainer) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
-                        return 4;
-                    }
-                    appContainer = true;
-                } finally {
-                    if (capsPtr != IntPtr.Zero) Marshal.FreeHGlobal(capsPtr);
-                    if (attrList != IntPtr.Zero) HeapFree(GetProcessHeap(), 0, attrList);
-                    capsPtr = IntPtr.Zero;
-                    attrList = IntPtr.Zero;
-                }
-            } else {
-                baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
-                if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
-                        true, flags, envPtr, cwd, ref baseSi, out pi)) {
-                    error = "CreateProcessAsUserW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                if (!SetTokenInformationAppContainerSid(restrictedToken, TokenAppContainerSid, ref appContainerSid, (uint)IntPtr.Size)) {
+                    error = "SetTokenInformation(TokenAppContainerSid) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
                     return 4;
                 }
-                appContainer = false;
+                appContainer = true;
+            }
+
+            // bInheritHandles=true propagates our std handles.
+            if (!CreateProcessAsUserW(hToken, exe, new StringBuilder(cmdLine), IntPtr.Zero, IntPtr.Zero,
+                    true, flags, envPtr, cwd, ref baseSi, out pi)) {
+                error = "CreateProcessAsUserW failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
+                return 4;
             }
 
             try {
@@ -788,8 +743,6 @@ public static class JobRunnerNative {
             }
         } finally {
             if (envPtr != IntPtr.Zero) Marshal.FreeHGlobal(envPtr);
-            if (capsPtr != IntPtr.Zero) Marshal.FreeHGlobal(capsPtr);
-            if (attrList != IntPtr.Zero) HeapFree(GetProcessHeap(), 0, attrList);
             if (restrictedToken != IntPtr.Zero && restrictedToken != primaryToken) CloseHandle(restrictedToken);
             if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
             // Closing the last job handle triggers KILL_ON_JOB_CLOSE for any
