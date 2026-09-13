@@ -221,13 +221,34 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     const secretFile = path.join(secretDir, 'secret.txt');
     fs.writeFileSync(secretFile, 'classified', 'utf8');
     // Type can reach it via cmd only if the AppContainer ACLs allow it; the
-    // secret directory is NOT in the allowlist so access must be DENIED.
+    // secret directory is NOT in the allowlist so the open must be DENIED.
     const res = await runSandboxed(
       'cmd.exe',
       ['/c', `type "${secretFile}"`],
       { useSandbox: true, workspace: wsDir }
     );
-    assertVerifiedSandbox(res, 'non-allowlisted-read');
+    // The sandbox itself must have been verified (AppContainer + Job Object)
+    // REGARDLESS of the target's exit code: containment holds even when the
+    // target is denied. A successful read would silently defeat the test.
+    assert.strictEqual(res.sandboxed, true, `non-allowlisted-read: ${res.error || res.stderr || 'no helper result'}`);
+    assert.strictEqual(
+      res.jobAssigned,
+      true,
+      `non-allowlisted-read: target must be verified inside the Job Object: ${res.error || res.stderr || res.stdout || ''}`
+    );
+    assert.strictEqual(
+      res.appContainer,
+      true,
+      `non-allowlisted-read: target must be verified as an AppContainer: ${res.error || res.stderr || res.stdout || ''}`
+    );
+    // The read must fail (nonzero) and be OS-enforced: an 'access denied'
+    // (ACL) error — not a path/syntax error that only accidentally leaks
+    // nothing because the command was malformed.
+    assert.strictEqual(res.success, false, 'the denied read must not succeed');
+    assert.ok(
+      /denied/i.test(`${res.stdout || ''} ${res.stderr || ''} ${res.error || ''}`),
+      `denial must be OS-enforced (access denied): ${res.stdout || ''} ${res.stderr || ''} ${res.error || ''}`
+    );
     assert.ok(!String(res.stdout).includes('classified'), 'non-allowlisted file must stay unreadable');
   }, 120000);
 

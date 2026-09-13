@@ -455,7 +455,10 @@ public static class JobRunnerNative {
             if (c == '\\') {
                 backslashes++;
             } else if (c == '"') {
-                sb.Append('\\', backslashes * 2 + 1);
+                // cmd.exe consumes this command line directly at process
+                // creation, and cmd does not understand CommandLineToArgvW's
+                // backslash escaping. Emit quotes literally so 'cmd /c type
+                // "C:\path\file"' reaches cmd intact.
                 sb.Append('"');
                 backslashes = 0;
             } else {
