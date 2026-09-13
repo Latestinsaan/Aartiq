@@ -730,9 +730,10 @@ public static class JobRunnerNative {
                     siex.lpAttributeList = attrList;
 
                     // Marshal the STARTUPINFOEX into unmanaged memory and pass a
-                    // pointer: the P/Invoke marshaller's buffered `ref` copy of an
-                    // embedded STARTUPINFO+attribute-list struct is what tripped an
-                    // AccessViolationException in CreateProcessW on some hosts.
+                    // pointer: the P/Invoke marshaller's buffered in/out copy of
+                    // an embedded STARTUPINFO struct plus attribute list is what
+                    // tripped an AccessViolationException in CreateProcessW on
+                    // some hosts.
                     IntPtr siexPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(STARTUPINFOEX)));
                     try {
                         Marshal.StructureToPtr(siex, siexPtr, false);

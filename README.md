@@ -7,7 +7,7 @@ Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial ac
 **Plan → Explain → Ask → Execute**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-cyan.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.3.6-blue.svg)](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.6)
+[![Version](https://img.shields.io/badge/Version-0.3.7-blue.svg)](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.7)
 [![Downloads](https://img.shields.io/github/downloads/Latestinssan/Aartiq/total?color=success&label=Downloads)](https://github.com/Latestinssan/Aartiq/releases)
 [![Windows](https://img.shields.io/badge/Windows-Supported-blue?logo=windows)](https://github.com/Latestinssan/Aartiq/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Supported-blue?logo=apple)](https://github.com/Latestinssan/Aartiq/releases/latest)
@@ -237,7 +237,7 @@ Aartiq opens the Chromium window immediately and loads background services async
 Measured on a **MacBook Pro M4 Pro**, 12-core CPU, 24 GB RAM, macOS 26.5.
 
 **Benchmark version:** v0.3.4
-**Current release:** v0.3.5
+**Current release:** v0.3.7
 **Date:** 2026-07-20
 
 | Metric                        | Result    |
@@ -320,7 +320,7 @@ The GitHub README provides the product overview. Detailed architecture and imple
 | Cloud Sync              | [Cloud Sync](https://aartiq.ponsrischool.in/docs/cloud-sync)           |
 | Troubleshooting         | [Troubleshooting](https://aartiq.ponsrischool.in/docs/troubleshooting) |
 | Changelog               | [Changelog](https://aartiq.ponsrischool.in/docs/changelog)             |
-| v0.3.5 Release Notes    | [Release Notes](release_notes/v0.3.5.md)                               |
+| v0.3.7 Release Notes    | [Release Notes](release_notes/v0.3.7.md)                               |
 
 ---
 
