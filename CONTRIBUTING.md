@@ -25,7 +25,7 @@ If you have an idea for a feature or an improvement:
 
 ## 💻 Development Workflow
 
-1.  **Fork the repository** on GitHub: [https://github.com/Preet3627/Aartiq](https://github.com/Preet3627/Aartiq)
+1.  **Fork the repository** on GitHub: [https://github.com/Latestinssan/Aartiq](https://github.com/Latestinssan/Aartiq)
 2.  **Clone the Repo** locally:
     ```bash
     git clone https://github.com/YOUR-USERNAME/Browser-AI.git
@@ -113,7 +113,7 @@ The CI will automatically build all platforms and create a GitHub release.
 ### Landing Page Auto-Detection
 The landing page automatically fetches downloads from GitHub releases using:
 ```
-https://api.github.com/repos/Preet3627/Aartiq/releases/latest
+https://api.github.com/repos/Latestinssan/Aartiq/releases/latest
 ```
 
 ## ❓ Need Help?
@@ -154,11 +154,11 @@ eddzsh is the security architect behind Aartiq's ticket-based approval system. T
 
 > *First Issue Reporter · Early Adopter · Bug Hunter*
 
-**GitHub:** [Dxrkaa](https://github.com/Dxrkaa) · **Issue:** [#6](https://github.com/Preet3627/Aartiq/issues/6)
+**GitHub:** [Dxrkaa](https://github.com/Dxrkaa) · **Issue:** [#6](https://github.com/Latestinssan/Aartiq/issues/6)
 
 Dxrkaa opened the first community-reported bug on Aartiq. His contributions include:
 
-- **First Issue Report:** Opened [Issue #6](https://github.com/Preet3627/Aartiq/issues/6) reporting that the latest version failed to launch on Windows (process running in Task Manager but no window visible)
+- **First Issue Report:** Opened [Issue #6](https://github.com/Latestinssan/Aartiq/issues/6) reporting that the latest version failed to launch on Windows (process running in Task Manager but no window visible)
 - **Early Adoption:** Was among the first external users to install and test Aartiq on Windows
 - **Bug Discovery:** Identified a critical launch regression that was fixed in v0.2.9
 - **Community Catalyst:** The first issue report marked the beginning of Aartiq's public bug-tracking lifecycle

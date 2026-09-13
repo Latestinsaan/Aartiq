@@ -91,7 +91,7 @@ Despite constant crashes, build failures (Electron is heavy!), and school pressu
 ## 📦 Installation
 \`\`\`bash
 # Clone the repository
-git clone https://github.com/Preet3627/Aartiq.git
+git clone https://github.com/Latestinssan/Aartiq.git
 
 # Install dependencies
 npm install
@@ -213,7 +213,7 @@ const Documentation = () => {
                         <footer className="flex flex-col lg:flex-row items-center justify-between gap-8 pt-8">
                             <div className="flex items-center gap-6">
                                 <a
-                                    href="https://github.com/Preet3627/Aartiq"
+                                    href="https://github.com/Latestinssan/Aartiq"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex items-center gap-2 text-white/40 hover:text-white transition-colors group"

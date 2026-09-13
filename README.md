@@ -7,12 +7,12 @@ Aartiq™ is an open-source AI browser that plans tasks, explains non-trivial ac
 **Plan → Explain → Ask → Execute**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-cyan.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.3.6-blue.svg)](https://github.com/Latestinsaan/Aartiq/releases/tag/v0.3.6)
-[![Downloads](https://img.shields.io/github/downloads/Latestinsaan/Aartiq/total?color=success&label=Downloads)](https://github.com/Latestinsaan/Aartiq/releases)
-[![Windows](https://img.shields.io/badge/Windows-Supported-blue?logo=windows)](https://github.com/Latestinsaan/Aartiq/releases/latest)
-[![macOS](https://img.shields.io/badge/macOS-Supported-blue?logo=apple)](https://github.com/Latestinsaan/Aartiq/releases/latest)
-[![Linux](https://img.shields.io/badge/Linux-Supported-blue?logo=linux)](https://github.com/Latestinsaan/Aartiq/releases/latest)
-[![Android](https://img.shields.io/badge/Android-Supported-blue?logo=android)](https://github.com/Latestinsaan/Aartiq/releases/latest)
+[![Version](https://img.shields.io/badge/Version-0.3.6-blue.svg)](https://github.com/Latestinssan/Aartiq/releases/tag/v0.3.6)
+[![Downloads](https://img.shields.io/github/downloads/Latestinssan/Aartiq/total?color=success&label=Downloads)](https://github.com/Latestinssan/Aartiq/releases)
+[![Windows](https://img.shields.io/badge/Windows-Supported-blue?logo=windows)](https://github.com/Latestinssan/Aartiq/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-Supported-blue?logo=apple)](https://github.com/Latestinssan/Aartiq/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-Supported-blue?logo=linux)](https://github.com/Latestinssan/Aartiq/releases/latest)
+[![Android](https://img.shields.io/badge/Android-Supported-blue?logo=android)](https://github.com/Latestinssan/Aartiq/releases/latest)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Listed-blue?logo=microsoft)](https://apps.microsoft.com/detail/9nd6wg2rp7cm?hl=en-GB&gl=IN)
 
 <p align="center">
@@ -269,7 +269,7 @@ Detailed measurements and methodology:
 
 Download the latest release from:
 
-**[Aartiq Releases →](https://github.com/Latestinsaan/Aartiq/releases)**
+**[Aartiq Releases →](https://github.com/Latestinssan/Aartiq/releases)**
 
 ### macOS
 
@@ -282,7 +282,7 @@ xattr -cr /Applications/Aartiq.app
 ### Build From Source
 
 ```bash
-git clone https://github.com/Latestinsaan/Aartiq.git
+git clone https://github.com/Latestinssan/Aartiq.git
 cd Aartiq/aartiq-browser
 
 npm install
@@ -326,10 +326,10 @@ The GitHub README provides the product overview. Detailed architecture and imple
 
 ## Contributors
 
-Built by [Latestinsaan](https://github.com/Latestinsaan) with contributions from the community.
+Built by [Latestinssan](https://github.com/Latestinssan) with contributions from the community.
 
-<a href="https://github.com/Latestinsaan/Aartiq/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Latestinsaan/Aartiq" />
+<a href="https://github.com/Latestinssan/Aartiq/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Latestinssan/Aartiq" />
 </a>
 
 ---
@@ -400,7 +400,7 @@ Built by [Latestinsaan](https://github.com/Latestinsaan) with contributions from
 >
 > Thank you for your patience and support. ❤️
 >
-> — **Latestinsaan**
+> — **Latestinssan**
 ---
 
 ## License
@@ -418,7 +418,7 @@ The MCP server is MIT-licensed for compatibility with Claude Desktop and other M
 
 ## Trademark
 
-**Aartiq™** is a trademark of Latestinsaan.
+**Aartiq™** is a trademark of Latestinssan.
 
 The applicable open-source license permits the use, modification, and redistribution of the source code. It does **not** grant permission to use the Aartiq name, logo, trademarks, or visual identity.
 

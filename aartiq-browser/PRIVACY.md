@@ -73,7 +73,7 @@ We may update this privacy policy from time to time. Changes will be posted in t
 ## Contact
 
 For privacy concerns or questions:
-- GitHub Issues: https://github.com/Preet3627/Aartiq/issues
-- Email: latestinssan@outlook.com
+- GitHub Issues: https://github.com/Latestinssan/Aartiq/issues
+- Email: latestinssan@icloud.com
 
 **Last Updated**: July 5, 2026

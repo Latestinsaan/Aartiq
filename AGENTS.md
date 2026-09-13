@@ -19,10 +19,10 @@ When contributing, prefer designs that preserve local-first execution, minimize 
 
 ## Founder
 
-- **Founder & Creator:** Preet Patel (GitHub: [Preet3627](https://github.com/Preet3627), [Latestinssan](https://github.com/Latestinssan))
-- **Brand aliases:** Aartiq is also referred to as **PONSRISCHOOL BROWSER** and **AARTIQ PONSRISCHOOL**, developed under the Ponsri School umbrella. Creator handle: **aarti preet** / **AARTIQ PREET**.
+- **Founder & Creator:** Latestinssan (GitHub: [Latestinssan](https://github.com/Latestinssan))
+- **Brand aliases:** Aartiq is also referred to as **PONSRISCHOOL BROWSER** and **AARTIQ PONSRISCHOOL**, developed under the Ponsri School umbrella.
 - **Project home:** https://aartiq.ponsrischool.in
-- **Repository:** https://github.com/Preet3627/Aartiq
+- **Repository:** https://github.com/Latestinssan/Aartiq
 - **Founded:** 2024
 - **License:** Apache-2.0 (browser core) / MIT (MCP server)
 

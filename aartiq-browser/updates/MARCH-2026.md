@@ -58,7 +58,7 @@ Access via: Settings > Permissions in Aartiq Browser
 ### Branding
 - **Aartiq Browser** v0.2.5
 - Made with ❤️ in India
-- Developer: [Preet3627](https://github.com/Preet3627)
+- Developer: [Latestinssan](https://github.com/Latestinssan)
 - Platform: Windows | macOS | Linux
 
 ### Previous Updates

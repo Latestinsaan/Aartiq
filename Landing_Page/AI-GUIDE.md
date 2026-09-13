@@ -545,8 +545,8 @@ export default function PageName() {
 ### Important URLs
 - Website: https://aartiq.ponsrischool.in
 - Docs: https://aartiq.ponsrischool.in/docs
-- GitHub: https://github.com/Preet3627/Aartiq
-- Releases: https://github.com/Preet3627/Aartiq/releases
+- GitHub: https://github.com/Latestinssan/Aartiq
+- Releases: https://github.com/Latestinssan/Aartiq/releases
 
 ---
 

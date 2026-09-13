@@ -5721,7 +5721,7 @@ Do NOT perform a single broad search for the whole request.`
             const pdfTitle = `Aartiq_AI_Capability_Report_${new Date().toISOString().split('T')[0]}`;
             const { buildCapabilityReportPDF } = await import('./ai/AIUtils');
             const capabilityPDF = buildCapabilityReportPDF({
-              author: 'Preet Kumar Patel (16-year-old student, India)',
+              author: 'Latestinssan',
               version: versionLabel,
               features: capabilityFeatures,
               platform: 'Windows, macOS, Linux, Android'
@@ -5755,7 +5755,7 @@ I've successfully executed the following real tasks:
 
 **📥 Your Capability Report PDF has been saved to your Downloads folder.**
 
-**Built by:** Preet Kumar Patel — A 16-year-old student from India 🇮🇳
+**Built by:** Latestinssan
 
 *Aartiq ${versionLabel} — For the questions that matter*
           ` }]);

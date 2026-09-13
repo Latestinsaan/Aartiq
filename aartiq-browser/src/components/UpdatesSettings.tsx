@@ -100,7 +100,7 @@ const UpdatesSettings = () => {
       setLoading(true);
       setError(null);
       
-      const response = await fetch('https://api.github.com/repos/Preet3627/Aartiq/releases');
+      const response = await fetch('https://api.github.com/repos/Latestinssan/Aartiq/releases');
       if (!response.ok) throw new Error(`Failed to fetch releases: ${response.status}`);
       
       const data: Release[] = await response.json();

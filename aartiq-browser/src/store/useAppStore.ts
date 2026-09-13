@@ -758,7 +758,7 @@ export const useAppStore = create<BrowserState>()(
             clearHistory: () => set({ history: [] }),
 
             // User and auth
-            setUser: (user: any) => set({ user, isAdmin: user?.email === 'preetjgfilj2@gmail.com' }),
+            setUser: (user: any) => set({ user, isAdmin: user?.email === 'dev@ponsrischool.in' }),
             setUserEmail: (email: string) => set({ userEmail: email }),
             setAdmin: (isAdmin: boolean) => set({ isAdmin }),
             setAuthToken: (token: string | null) => set({ authToken: token }),

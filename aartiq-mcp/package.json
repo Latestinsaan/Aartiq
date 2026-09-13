@@ -8,10 +8,10 @@
   },
   "keywords": ["mcp", "browser", "ai", "automation", "claude", "settings", "permissions", "scheduling", "video", "security", "bookmarks", "history"],
   "license": "MIT",
-  "author": "Latestinsaan",
+  "author": "Latestinssan",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Latestinsaan/Aartiq"
+    "url": "https://github.com/Latestinssan/Aartiq"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"

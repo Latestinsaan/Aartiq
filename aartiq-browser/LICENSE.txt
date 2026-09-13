@@ -1,7 +1,7 @@
 END USER LICENSE AGREEMENT (EULA)
 
 This End User License Agreement ("Agreement") is a legal agreement between you and Latestinssan for the Aartiq Browser software.
-This Is Open Source Software.Made By Preet3627
+This Is Open Source Software.Made By Latestinssan
 1. LICENSE GRANT
 Latestinssan grants you a non-exclusive, non-transferable license to use the Aartiq Browser for personal or professional use.
 

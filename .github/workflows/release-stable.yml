@@ -486,7 +486,7 @@ jobs:
             | iOS | `Aartiq.ipa` |
 
             ---
-            Built with ❤️ by [Latestinssan](https://github.com/Preet3627)
+            Built with ❤️ by [Latestinssan](https://github.com/Latestinssan)
           draft: false
           prerelease: ${{ needs.get-version.outputs.is_stable == 'false' }}
           token: ${{ secrets.GITHUB_TOKEN }}

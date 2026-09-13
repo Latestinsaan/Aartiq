@@ -2379,7 +2379,7 @@ const buildApplicationMenu = () => {
         { label: 'Shortcut & Menu Guide', click: () => openSettingsSection('shortcuts', { preferElectron: true }) },
         { label: 'Welcome & Setup', click: () => openSettingsSection('about', { preferElectron: true }) },
         { type: 'separator' },
-        { label: 'Report Issue...', click: () => sendToActiveWindow('add-new-tab', 'https://github.com/Preet3627/Aartiq/issues') },
+        { label: 'Report Issue...', click: () => sendToActiveWindow('add-new-tab', 'https://github.com/Latestinssan/Aartiq/issues') },
         { label: 'Check for Updates', click: () => openSettingsSection('updates', { preferElectron: true }) }
       ]
     }

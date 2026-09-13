@@ -644,7 +644,7 @@ class _CrossPlatformSettingsState extends State<CrossPlatformSettings> {
           ),
         ),
         title: const Text("Aartiq GitHub Repository"),
-        subtitle: const Text("https://github.com/Preet3627/Aartiq"),
+        subtitle: const Text("https://github.com/Latestinssan/Aartiq"),
         trailing: const Icon(Icons.open_in_new, color: Color(0xFF00E5FF)),
         onTap: () {
           final windowModel = Provider.of<WindowModel>(context, listen: false);
@@ -652,7 +652,7 @@ class _CrossPlatformSettingsState extends State<CrossPlatformSettings> {
             WebViewTab(
               key: GlobalKey(),
               webViewModel: WebViewModel(
-                url: WebUri("https://github.com/Preet3627/Aartiq"),
+                url: WebUri("https://github.com/Latestinssan/Aartiq"),
               ),
             ),
           );

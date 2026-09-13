@@ -76,7 +76,7 @@ class _ProjectInfoPopupState extends State<ProjectInfoPopup> {
             WebViewTab(
               key: GlobalKey(),
               webViewModel: WebViewModel(
-                url: WebUri("https://github.com/Preet3627/Aartiq"),
+                url: WebUri("https://github.com/Latestinssan/Aartiq"),
               ),
             ),
           );

@@ -593,7 +593,7 @@ export const releases: ReleaseEntry[] = [
         'Updated components page with correct line counts'
       ],
       security: [
-        'Updated security contact: preetjgfilj2@gmail.com'
+        'Updated security contact'
       ]
     }
   },
