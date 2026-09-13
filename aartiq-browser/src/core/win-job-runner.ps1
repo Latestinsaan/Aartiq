@@ -236,12 +236,20 @@ public static class JobRunnerNative {
     [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern int DeleteAppContainerProfile(string pszAppContainerName);
 
-    [DllImport("userenv.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern int CreateAppContainerToken(
+    // kernelbase.CreateLowBoxToken is the actual export that builds an
+    // AppContainer token from a profile SID (CreateAppContainerToken is NOT an
+    // entry point in userenv.dll). Zero capabilities + an integrity-level SID
+    // (Low) are applied in the one call.
+    [DllImport("kernelbase.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr CreateLowBoxToken(
+        IntPtr ExistingTokenHandle,
+        uint DesiredAccess,
         IntPtr AppContainerSid,
         IntPtr Capabilities,
         uint CapabilityCount,
-        out IntPtr TokenHandle);
+        IntPtr HandleList,
+        uint HandleCount,
+        IntPtr IntegrityLevelSid);
 
     // ---- Token information class constants ----
     public const int TokenPrivileges = 3;
@@ -581,31 +589,20 @@ public static class JobRunnerNative {
         }
     }
 
-    // Create the AppContainer token from the profile SID (zero capabilities =>
-    // deny-all network/device/user-handle access), then stamp the Low
-    // mandatory integrity label. Returns 0 on success; otherwise the HRESULT
-    // or Win32 error.
-    public static int CreateAppContainerLowToken(IntPtr acSid, out IntPtr token) {
+    // Create the AppContainer token from the profile SID via kernelbase
+    // CreateLowBoxToken (zero capabilities => deny-all network/device/user-handle
+    // access, Low integrity stamp in the same call). Returns 0 on success,
+    // otherwise the Win32 error.
+    public static int CreateAppContainerLowToken(IntPtr seed, IntPtr acSid, out IntPtr token) {
         token = IntPtr.Zero;
-        int hr = CreateAppContainerToken(acSid, IntPtr.Zero, 0, out token);
-        if (hr != 0) return hr;
         IntPtr lowSid = IntPtr.Zero;
         if (!ConvertStringSidToSid("S-1-16-4096", out lowSid)) {  // S-1-16-4096 = Low
             return Marshal.GetLastWin32Error();
         }
         try {
-            TOKEN_MANDATORY_LABEL label = new TOKEN_MANDATORY_LABEL();
-            label.Label.Sid = lowSid;
-            label.Label.Attributes = SE_GROUP_INTEGRITY;
-            int size = Marshal.SizeOf(typeof(TOKEN_MANDATORY_LABEL));
-            IntPtr labelPtr = Marshal.AllocHGlobal(size);
-            try {
-                Marshal.StructureToPtr(label, labelPtr, false);
-                if (!SetTokenInformation(token, TokenIntegrityLevel, labelPtr, (uint)size)) {
-                    return Marshal.GetLastWin32Error();
-                }
-            } finally {
-                Marshal.FreeHGlobal(labelPtr);
+            token = CreateLowBoxToken(seed, (uint)MAXIMUM_ALLOWED, acSid, IntPtr.Zero, 0, IntPtr.Zero, 0, lowSid);
+            if (token == IntPtr.Zero) {
+                return Marshal.GetLastWin32Error();
             }
             return 0;
         } finally {
@@ -682,12 +679,13 @@ public static class JobRunnerNative {
                 if (useAppContainer) {
                     // AppContainer token created from the profile SID with
                     // zero capabilities (deny-all network/devices/user
-                    // handles) + Low integrity. The app container property
-                    // lives on the token itself, so CreateProcessAsUserW can
-                    // spawn it with a plain STARTUPINFO.
-                    int acrc = CreateAppContainerLowToken(appContainerSid, out restrictedToken);
+                    // handles) + Low integrity, in one CreateLowBoxToken call.
+                    // The app container property lives on the token itself, so
+                    // CreateProcessAsUserW can spawn it with a plain
+                    // STARTUPINFO.
+                    int acrc = CreateAppContainerLowToken(primaryToken, appContainerSid, out restrictedToken);
                     if (acrc != 0) {
-                        error = "CreateAppContainerToken/SetTokenInformation failed (0x" + acrc.ToString("X8") + ")";
+                        error = "CreateLowBoxToken failed (0x" + acrc.ToString("X8") + ")";
                         return 3;
                     }
                     hToken = restrictedToken;

@@ -71,35 +71,36 @@ describe('Windows AppContainer sandbox — JS contract & invariants', () => {
     );
   });
 
-  it('encodes the AppContainer + restricted-token + verified-assignment invariants', () => {
-    const runner = sandbox.getWindowsJobRunnerScript();
-    // OS-level isolation is AppContainer-based, not process-only.
-    assert.ok(/CreateAppContainerProfile/.test(runner), 'must create an AppContainer profile');
-    assert.ok(/DeriveAppContainerSidFromAppContainerName/.test(runner), 'must derive the package SID when the profile exists');
-    assert.ok(/GetAppContainerFolderPath/.test(runner), 'must isolate TEMP/LOCALAPPDATA into the AC profile folder');
-    assert.ok(/DeleteAppContainerProfile/.test(runner), 'must delete the AC profile after the run');
-    // The SECURITY_CAPABILITIES startup-info attribute list is what makes the
-    // target an AppContainer at creation time (LaunchAppContainer pattern).
-    assert.ok(/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/.test(runner), 'must pass SECURITY_CAPABILITIES via attribute list');
-    assert.ok(/EXTENDED_STARTUPINFO_PRESENT/.test(runner), 'must set EXTENDED_STARTUPINFO_PRESENT');
-    assert.ok(/InitializeProcThreadAttributeList/.test(runner), 'must size/initialize the attribute list');
-    // The allowlist is OS-enforced via package-SID ACL grants.
-    assert.ok(/Invoke-IntegrityGrant/.test(runner), 'must grant the package SID on allowlisted paths');
-    // The old mechanism must be gone: the OS builds the AC token from the
-    // attribute list — we never create an AppContainer token explicitly.
-    assert.ok(!/CreateAppContainerToken/.test(runner), 'must NOT use CreateAppContainerToken');
-    // Restricted token: dangerous privileges deleted + Low integrity.
-    assert.ok(/CreateRestrictedToken/.test(runner), 'must build a restricted token');
-    assert.ok(/SeChangeNotifyPrivilege/.test(runner), 'must keep traversal privilege');
-    assert.ok(/TOKEN_MANDATORY_LABEL/.test(runner), 'must set the Low mandatory integrity label');
-    // Job Object guarantees survive alongside AppContainer isolation.
-    assert.ok(/CREATE_SUSPENDED/.test(runner), 'target must be created suspended');
-    assert.ok(/CREATE_BREAKAWAY_FROM_JOB/.test(runner), 'must break away from a parent job');
-    assert.ok(/IsProcessInJob/.test(runner), 'must verify assignment into the job');
-    assert.ok(/AssignProcessToJobObject/.test(runner), 'must assign to the job before resume');
-    assert.ok(/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/.test(runner), 'must kill tree on helper exit');
-    assert.ok(/JOB_OBJECT_LIMIT_ACTIVE_PROCESS/.test(runner), 'must cap active processes');
-  });
+it('encodes the AppContainer + restricted-token + verified-assignment invariants', () => {
+      const runner = sandbox.getWindowsJobRunnerScript();
+      // OS-level isolation is AppContainer-based, not process-only.
+      assert.ok(/CreateAppContainerProfile/.test(runner), 'must create an AppContainer profile');
+      assert.ok(/DeriveAppContainerSidFromAppContainerName/.test(runner), 'must derive the package SID when the profile exists');
+      assert.ok(/GetAppContainerFolderPath/.test(runner), 'must isolate TEMP/LOCALAPPDATA into the AC profile folder');
+      assert.ok(/DeleteAppContainerProfile/.test(runner), 'must delete the AC profile after the run');
+      // The target is made an AppContainer via the token: kernelbase
+      // CreateLowBoxToken builds the container token from the profile SID with
+      // zero capabilities + Low integrity. The SECURITY_CAPABILITIES
+      // startup-info attribute list is NOT supported by CreateProcessAsUserW,
+      // so no attribute-list plumbing is used.
+      assert.ok(/CreateLowBoxToken/.test(runner), 'must build the AppContainer token via kernelbase.CreateLowBoxToken');
+      assert.ok(!/PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES/.test(runner), 'must NOT use the SECURITY_CAPABILITIES attribute list');
+      assert.ok(!/EXTENDED_STARTUPINFO_PRESENT/.test(runner), 'must not need EXTENDED_STARTUPINFO_PRESENT');
+      assert.ok(!/InitializeProcThreadAttributeList/.test(runner), 'must not initialize a proc-thread attribute list');
+      // The allowlist is OS-enforced via package-SID ACL grants.
+      assert.ok(/Invoke-IntegrityGrant/.test(runner), 'must grant the package SID on allowlisted paths');
+      // Restricted token (non-AppContainer path): privileges deleted + Low IL.
+      assert.ok(/CreateRestrictedToken/.test(runner), 'must build a restricted token');
+      assert.ok(/SeChangeNotifyPrivilege/.test(runner), 'must keep traversal privilege');
+      assert.ok(/TOKEN_MANDATORY_LABEL/.test(runner), 'must set the Low mandatory integrity label');
+      // Job Object guarantees survive alongside AppContainer isolation.
+      assert.ok(/CREATE_SUSPENDED/.test(runner), 'target must be created suspended');
+      assert.ok(/CREATE_BREAKAWAY_FROM_JOB/.test(runner), 'must break away from a parent job');
+      assert.ok(/IsProcessInJob/.test(runner), 'must verify assignment into the job');
+      assert.ok(/AssignProcessToJobObject/.test(runner), 'must assign to the job before resume');
+      assert.ok(/JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/.test(runner), 'must kill tree on helper exit');
+      assert.ok(/JOB_OBJECT_LIMIT_ACTIVE_PROCESS/.test(runner), 'must cap active processes');
+    });
 
   it('parseWindowsHelperOutput reports isolation only on a verified success', () => {
     const ok = sandbox.parseWindowsHelperOutput(

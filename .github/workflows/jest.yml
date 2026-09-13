@@ -12,6 +12,14 @@ on:
       - 'aartiq-browser/**'
       - '.github/workflows/jest.yml'
   workflow_dispatch:
+    inputs:
+      # Dispatching with a pattern runs ONLY the Windows sandbox job, and only
+      # that test path — much faster iteration on win-job-runner.ps1. Leave
+      # empty (typical push/PR runs) for the full 3-suite Windows matrix.
+      windows-test-pattern:
+        description: 'Jest test path for the Windows job (e.g. tests/windows-job-sandbox.test.js)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,6 +31,7 @@ jobs:
   jest:
     name: Run Jest (aartiq-browser)
     runs-on: ubuntu-latest
+    if: ${{ !inputs.windows-test-pattern }}
     defaults:
       run:
         working-directory: aartiq-browser
@@ -74,7 +83,10 @@ jobs:
         run: npm ci
 
       - name: Run Windows sandbox tests
-        run: npx jest tests/sandbox-security.test.js tests/windows-job-sandbox.test.js tests/linux-bwrap-sandbox.test.js --ci --runInBand
+        run: |
+          $pattern = "${{ inputs.windows-test-pattern }}"
+          if ($pattern -eq '') { $pattern = 'tests/sandbox-security.test.js tests/windows-job-sandbox.test.js tests/linux-bwrap-sandbox.test.js' }
+          npx jest $pattern --ci --runInBand
 
   # macOS runtime verification. GitHub's macos runners ship /usr/bin/sandbox-exec
   # and python3, so the Seatbelt adversarial suite (file allowlist, IP + AF_UNIX
@@ -82,6 +94,7 @@ jobs:
   macos-sandbox:
     name: Run Jest (macOS Seatbelt sandbox runtime)
     runs-on: macos-latest
+    if: ${{ !inputs.windows-test-pattern }}
     defaults:
       run:
         working-directory: aartiq-browser
@@ -111,6 +124,7 @@ jobs:
   linux-sandbox:
     name: Run Jest (Linux bubblewrap sandbox runtime)
     runs-on: ubuntu-latest
+    if: ${{ !inputs.windows-test-pattern }}
     defaults:
       run:
         working-directory: aartiq-browser
