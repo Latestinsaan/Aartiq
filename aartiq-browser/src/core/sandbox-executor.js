@@ -787,10 +787,16 @@ function parseWindowsHelperOutput(stdout, stderr) {
     };
   }
   if (parsed && parsed.sandboxed === false) {
-    return createFailure(
-      parsed.code || 'SANDBOX_SETUP_FAILED',
-      (parsed.error || stderr || 'Windows sandbox setup failed').trim()
-    );
+    const detail = [
+      parsed.error,
+      stderr,
+      parsed.code ? `code=${parsed.code}` : '',
+      'Windows sandbox setup failed'
+    ]
+      .filter((p) => p !== undefined && p !== null && String(p).trim() !== '')
+      .map((p) => String(p).trim())
+      .join(' | ');
+    return createFailure(parsed.code || 'SANDBOX_SETUP_FAILED', detail);
   }
   return createFailure('SANDBOX_SETUP_FAILED', (stderr || stdout || 'Windows sandbox runner produced no result').trim());
 }
