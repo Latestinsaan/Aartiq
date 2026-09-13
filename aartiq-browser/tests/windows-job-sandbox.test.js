@@ -239,10 +239,16 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
     child.on('error', (err) => {
       assert.fail(`helper failed to start: ${err.message}`);
     });
+    // Attach the exit listener BEFORE the pause: a fast helper failure can
+    // exit during the delay, and listening afterwards would miss the event and
+    // hang the test until jest's own timeout.
+    const exited = new Promise((r) => child.on('exit', r));
     // Let the (long) target start, then kill the helper after a short delay.
     await new Promise((r) => setTimeout(r, 2000));
-    child.kill('SIGKILL');
-    await new Promise((r) => child.on('exit', r));
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
+    await exited;
     if (config.cleanup) { try { config.cleanup(); } catch (e) { /* best-effort */ } }
     // If KILL_ON_JOB_CLOSE worked, the target ping was terminated and never
     // wrote the file.

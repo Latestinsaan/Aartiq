@@ -211,6 +211,23 @@ function buildSafeEnv(options = {}) {
   return safeEnv;
 }
 
+// Windows environment variables are case-insensitive, so a Node process.env
+// can carry both `SystemRoot` and `SYSTEMROOT`. PowerShell 5.1's
+// ConvertFrom-Json builds a case-insensitive dictionary and REJECTS such
+// duplicates outright, so the staged payload must be unique case-insensitively.
+// The first-seen casing wins; the last-seen value wins (mirroring how the OS
+// applies case-insensitive environment assignments).
+function dedupeEnvKeys(env) {
+  const out = {};
+  const seen = new Map();
+  for (const [key, value] of Object.entries(env || {})) {
+    const folded = key.toLowerCase();
+    if (!seen.has(folded)) seen.set(folded, key);
+    out[seen.get(folded)] = value;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // macOS Seatbelt sandbox
 // ---------------------------------------------------------------------------
@@ -662,7 +679,7 @@ function createWindowsSandbox(command, args, options = {}) {
   const payload = {
     command,
     args,
-    env: buildSafeEnv(options),
+    env: dedupeEnvKeys(buildSafeEnv(options)),
     cwd: workspace,
     maxProcesses: options.maxProcesses || DEFAULT_MAX_PROCESSES,
     maxMemoryBytes: options.maxMemoryBytes || 0,
