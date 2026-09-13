@@ -46,7 +46,7 @@ describe('Automation Layer', () => {
   });
 
   describe('moveMouse', () => {
-    it('should not throw for valid coordinates', () => {
+    it('should not throw for valid coordinates', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -58,7 +58,7 @@ describe('Automation Layer', () => {
   });
 
   describe('click', () => {
-    it('should not throw for valid click', () => {
+    it('should not throw for valid click', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -68,7 +68,7 @@ describe('Automation Layer', () => {
       });
     });
 
-    it('should handle different buttons', () => {
+    it('should handle different buttons', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -78,7 +78,7 @@ describe('Automation Layer', () => {
       });
     });
 
-    it('should handle double click', () => {
+    it('should handle double click', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -90,7 +90,7 @@ describe('Automation Layer', () => {
   });
 
   describe('typeText', () => {
-    it('should handle empty string', () => {
+    it('should handle empty string', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -100,7 +100,7 @@ describe('Automation Layer', () => {
       });
     });
 
-    it('should handle regular text', () => {
+    it('should handle regular text', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -112,7 +112,7 @@ describe('Automation Layer', () => {
   });
 
   describe('keyTap', () => {
-    it('should handle basic keys', () => {
+    it('should handle basic keys', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -122,7 +122,7 @@ describe('Automation Layer', () => {
       });
     });
 
-    it('should handle keys with modifiers', () => {
+    it('should handle keys with modifiers', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -134,7 +134,7 @@ describe('Automation Layer', () => {
   });
 
   describe('scroll', () => {
-    it('should handle scroll directions', () => {
+    it('should handle scroll directions', function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -147,7 +147,7 @@ describe('Automation Layer', () => {
   });
 
   describe('executeClickSequence', () => {
-    it('should execute a sequence of actions', async () => {
+    it('should execute a sequence of actions', async function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
@@ -162,7 +162,7 @@ describe('Automation Layer', () => {
       assert.strictEqual(results.length, 2);
     });
 
-    it('should stop on error when configured', async () => {
+    it('should stop on error when configured', async function () {
       if (!automationLayer.isAvailable) {
         this.skip();
         return;
