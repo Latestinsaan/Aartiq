@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-13
 **Scope:** Windows sandbox in `aartiq-browser/src/core/` (win-job-runner.ps1, sandbox-executor.js) and its JS callers/tests.
-**Version:** unreleased 0.4.0
+**Version:** unreleased 0.3.7
 **Audit type:** design + source review (not a pentest)
 
 > This report replaces the previous `2026-07-22_Production_Readiness_Audit`. The
@@ -16,7 +16,7 @@
 
 Command execution on Windows is now sandboxed at the OS layer:
 
-| Control | Before (0.3.6) | After (0.4.0) |
+| Control | Before (0.3.6) | After (0.3.7) |
 |---|---|---|
 | Process containment | Job Object | Job Object (kept, verified) |
 | Privileges | primary token | restricted token, dangerous privileges DELETED |
@@ -30,7 +30,7 @@ Command execution on Windows is now sandboxed at the OS layer:
 Microsoft's own AppContainer launch guidance. **Runtime verification is
 happening on a real Windows host via the CI matrix** (windows-latest, plus
 macos-latest for the hardened Seatbelt profile, see §7 and §8) and must be
-green before 0.4.0 ships.
+green before 0.3.7 ships.
 
 ---
 
@@ -177,7 +177,7 @@ validator, not as the security boundary.
    into CI: `.github/workflows/jest.yml` runs the sandbox suites on
    `windows-latest` (AppContainer runtime), `macos-latest` (Seatbelt runtime),
    and `ubuntu-latest` (bubblewrap) on every push/PR. Gate: the `windows-sandbox`
-   job must pass before 0.4.0 ships. Verify: AppContainer profile create/delete,
+   job must pass before 0.3.7 ships. Verify: AppContainer profile create/delete,
    ACL grant/revoke on a scratch tree, CreateProcessAsUser under AppContainer
    attribute list, Low-IL restricted token, `appContainer`/`jobAssigned`
    verification flags, TEMP-isolation, and the process-death behaviors.
@@ -192,7 +192,7 @@ design review is done.
 
 ---
 
-## 8. Concurrent hardening — macOS Seatbelt & Linux bubblewrap (v0.4.0)
+## 8. Concurrent hardening — macOS Seatbelt & Linux bubblewrap (v0.3.7)
 
 Scope of this update: review the macOS and Linux sandbox implementations against
 their platform primitives, harden the generated policies, and prove the new

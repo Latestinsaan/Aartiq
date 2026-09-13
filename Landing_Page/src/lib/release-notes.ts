@@ -17,7 +17,7 @@ export interface ReleaseEntry {
 
 export const releases: ReleaseEntry[] = [
   {
-    version: '0.4.0',
+    version: '0.3.7',
     date: '2026-09-13',
     codename: 'AppContainer',
     channel: 'stable',

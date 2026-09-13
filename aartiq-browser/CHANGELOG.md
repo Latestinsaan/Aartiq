@@ -1,6 +1,6 @@
 # Aartiq Browser - Recent Changes
 
-## Version 0.4.0 — Windows AppContainer OS-Level Sandboxing (unreleased)
+## Version 0.3.7 — Windows AppContainer OS-Level Sandboxing (unreleased)
 
 ### Security
 

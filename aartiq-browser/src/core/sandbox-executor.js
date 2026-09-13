@@ -12,7 +12,7 @@
  * unsandboxed is the explicit `useSandbox: false` escape hatch, which is
  * documented as unsandboxed execution and reported as such in the result.
  *
- * Platform guarantees (v0.4.0+):
+ * Platform guarantees (v0.3.7+):
  *   macOS  — Seatbelt (sandbox-exec) with a closed-by-default profile:
  *            deny file-read/write (re-allow only system paths + allowlisted
  *            directories + workspace), deny all IP network AND AF_UNIX
