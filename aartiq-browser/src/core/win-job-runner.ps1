@@ -201,7 +201,7 @@ public static class JobRunnerNative {
         uint TokenInformationLength);
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool SetTokenInformationAppContainerSid(
+    public static extern bool SetTokenInformation(
         IntPtr TokenHandle,
         int TokenInformationClass,
         ref IntPtr TokenInformation,
@@ -681,7 +681,7 @@ public static class JobRunnerNative {
             // handle access, applied from the very first instruction.
             baseSi.cb = (uint)Marshal.SizeOf(typeof(STARTUPINFO));
             if (useAppContainer) {
-                if (!SetTokenInformationAppContainerSid(restrictedToken, TokenAppContainerSid, ref appContainerSid, (uint)IntPtr.Size)) {
+                if (!SetTokenInformation(restrictedToken, TokenAppContainerSid, ref appContainerSid, (uint)IntPtr.Size)) {
                     error = "SetTokenInformation(TokenAppContainerSid) failed (0x" + Marshal.GetLastWin32Error().ToString("X8") + ")";
                     return 4;
                 }
