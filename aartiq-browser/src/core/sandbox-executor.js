@@ -770,7 +770,10 @@ function parseWindowsHelperOutput(stdout, stderr) {
     };
   }
   if (parsed && parsed.sandboxed === false) {
-    return createFailure(parsed.code || 'SANDBOX_SETUP_FAILED', parsed.error || 'Windows sandbox setup failed');
+    return createFailure(
+      parsed.code || 'SANDBOX_SETUP_FAILED',
+      (parsed.error || stderr || 'Windows sandbox setup failed').trim()
+    );
   }
   return createFailure('SANDBOX_SETUP_FAILED', (stderr || stdout || 'Windows sandbox runner produced no result').trim());
 }

@@ -95,7 +95,7 @@ try {
   # Read as UTF-8 explicitly: the payload is staged BOM-less by the Node side.
   $payload = Get-Content -Raw -Encoding UTF8 -LiteralPath $PayloadPath | ConvertFrom-Json
 } catch {
-  Write-Result @{ error = 'SANDBOX_SETUP_FAILED'; sandboxed = $false }
+  Write-Result @{ error = ("SANDBOX_SETUP_FAILED payload: " + $_.Exception.Message); sandboxed = $false }
   exit 1
 }
 
@@ -811,7 +811,7 @@ if ($command -match '[\\/]') {
   if ($found -and $found.Source) { $resolved = $found.Source }
 }
 if (-not $resolved -or -not (Test-Path -LiteralPath $resolved)) {
-  Write-Result @{ error = 'SANDBOX_SETUP_FAILED'; sandboxed = $false }
+  Write-Result @{ error = ("SANDBOX_SETUP_FAILED resolve: command='$command' resolved='" + $resolved + "'"); sandboxed = $false }
   exit 1
 }
 
