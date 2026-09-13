@@ -255,11 +255,16 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
   it('helper termination kills the target before it completes (KILL_ON_JOB_CLOSE)', async function () {
     const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'winjob-'));
     const targetFile = path.join(wsDir, 'should-not-appear.txt');
+    // The target must be long-running WITHOUT the network (an AppContainer with
+    // zero capabilities denies loopback, so 'ping -n 30' fails instantly and a
+    // trailing '& echo done' would write the file before the kill). A 60s
+    // timer that writes the probe file only on completion is deterministic.
+    process.env.ARQ_KILL_PROBE = targetFile;
     // Build the real launch config but spawn the runner ourselves so we can
     // kill the helper (job owner) mid-run and prove the target dies with it.
     const config = sandbox.createWindowsSandbox(
-      'cmd.exe',
-      ['/c', `ping -n 30 127.0.0.1 >nul & echo done > "${targetFile}"`],
+      'node.exe',
+      ['-e', "setTimeout(function(){require('fs').writeFileSync(process.env.ARQ_KILL_PROBE,'x')},60000)"],
       { workspace: wsDir }
     );
     const child = spawn(config.command, config.args, {
@@ -279,8 +284,9 @@ winRuntime('Windows AppContainer sandbox — runtime containment (win32 only)', 
       child.kill('SIGKILL');
     }
     await exited;
+    delete process.env.ARQ_KILL_PROBE;
     if (config.cleanup) { try { config.cleanup(); } catch (e) { /* best-effort */ } }
-    // If KILL_ON_JOB_CLOSE worked, the target ping was terminated and never
+    // If KILL_ON_JOB_CLOSE worked, the target timer was terminated and never
     // wrote the file.
     assert.ok(!fs.existsSync(targetFile), 'target must be killed when the helper exits');
   }, 60000);
