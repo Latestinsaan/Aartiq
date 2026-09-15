@@ -66,7 +66,7 @@ Result
 
 | Plan | Permission | Results |
 |:----:|:----------:|:-------:|
-| <img width="504" height="551" alt="Plan" src="https://github.com/user-attachments/assets/5311cf81-47cf-46c9-a1f7-994113923768" /> | <img width="504" height="551" alt="Permission" src="https://github.com/user-attachments/assets/b5c6f6c5-ae42-4fe1-8c86-9a1dfce03e93" /> | <img width="504" height="551" alt="Results" src="https://github.com/user-attachments/assets/fa1fd0be-5cf1-4c4a-8a97-30dfad70f5a3" /> |
+| <img width="516" height="573" alt="image" src="https://github.com/user-attachments/assets/f1c17873-077e-4b00-8ca7-87cc7cb4eebe" /> | <img width="516" height="573" alt="image" src="https://github.com/user-attachments/assets/a42e7c35-1f10-445a-b0a4-7660361a4f12" /> | <img width="516" height="573" alt="image" src="https://github.com/user-attachments/assets/aca29055-ce34-400c-9329-1bba7127d1b4" /> |
 
 Aartiq searches the web, gathers information, creates the document, requests approval for actions that require it, moves the resulting file, and opens it.
 
