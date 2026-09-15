@@ -348,76 +348,25 @@ Built by [Latestinssan](https://github.com/Latestinssan) with contributions from
 </a>
 
 ---
-
 > [!IMPORTANT]
 >
-> ## 🚧 Project Status
+> ## 🚧 Project Status: AI-Assisted Maintenance
 >
-> **Aartiq™ is entering an AI-assisted maintenance phase.**
+> Aartiq was built solo, from scratch, over the past several months — no team, no funding, just one developer learning as it went. It's now a working, tested, cross-platform AI browser with a real permission and sandboxing model behind it.
 >
-> Aartiq began as a small experiment—built around a question about what AI could become.
+> **Development has shifted to an AI-assisted maintenance model.** AI agents now handle a meaningful share of day-to-day work — reviewing issues, analyzing bugs, improving docs, and preparing fixes. This does **not** mean the project is unmaintained or unaccountable:
 >
-> It started with almost nothing:
+> - Every change to security, permissions, user data, releases, or project direction is reviewed and approved by a human before it ships.
+> - CI must be green before any release goes out (see the Security section above for the current test numbers).
+> - The maintainer remains responsible for the project's direction and correctness.
 >
-> **A vision.  
-> Dedication.  
-> Technology.  
-> Essentially zero-cost tooling.  
-> And one question.**
+> **Why this setup:** it lets a solo project keep shipping fixes and improvements without requiring full-time human bandwidth on every routine task, while keeping a human in the loop for anything consequential — which is the same philosophy Aartiq applies to its own permission model.
 >
-> For months, it was built with persistence—learning, experimenting, breaking things, and rebuilding them.
+> Bigger roadmap items (new features, larger refactors, community contribution workflows) are paused until there's more bandwidth or contributors to support them. Bug fixes, security patches, and documentation stay actively maintained.
 >
-> There was no team, company, or large budget behind it. Just code, determination, and a reason to keep building.
+> Issues, PRs, and questions are welcome — response time may vary, but nothing ships without review.
 >
-> It eventually became **Aartiq™**—an open-source AI-native browser with permission-gated automation, native OS integrations, MCP support, local AI, synchronization, document generation, and security-first design.
->
-> Today, Aartiq is developed on a MacBook Pro with an M4 Pro.
->
-> **The hardware changed.  
-> The project evolved.  
-> The question remained.**
->
-> One moment that changed Aartiq philosophy, however, stayed constant:
->
-> > **"What happened to my private diary should never happen to a computer system."**
->
-> That belief became part of Aartiq's approach to permission and control: AI can prepare and act, but important actions should not happen silently.
->
-> After months of building Aartiq, the focus temporarily shifted to other priorities.
->
-> During this period, AI agents may assist with:
->
-> - Reviewing and organizing issues
-> - Analyzing bugs
-> - Improving documentation
-> - Maintaining the codebase
-> - Preparing proposed fixes and updates
->
-> **AI assistance does not replace human responsibility.** Changes involving security, permissions, user data, releases, or project direction remain subject to human review, approval, and responsibility.
->
-> **Aartiq isn't abandoned. It's evolving.**
->
-> Once resources align, the plan is to return with a stronger foundation, better ideas, and hopefully a community to build with.
->
-> There is a reason this project began with a question.
->
-> There is a reason the project is called **Aartiq**.
->
-> And there is a reason the original question hasn't been written here.
->
-> **Maybe someday it will be shared.**
->
-> Until then:
->
-> **Aartiq is just 1 CM away from the future.**
->
-> The **"1 CM"** is a personal reminder that respecting a boundary often begins with asking before crossing it.
->
-> Thank you for your patience and support. ❤️
->
-> — **Latestinssan**
----
-
+> — Latestinssan
 ## License
 
 Aartiq uses a **dual-license** model:
